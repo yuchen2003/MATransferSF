@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from utils.embed import polynomial_embed, binary_embed
 
-class MTRNNAgent(nn.Module):
+class TrRNNAgent(nn.Module):
     def __init__(self, task2input_shape_info, 
                  task2decomposer, task2n_agents,
                  surrogate_decomposer, args) -> None:
@@ -161,6 +161,7 @@ class MTRNNAgent(nn.Module):
             case "gymma":
                 obs_own_dim, obs_en_dim, obs_al_dim = surrogate_decomposer.own_obs_dim, surrogate_decomposer.obs_nf_en, surrogate_decomposer.obs_nf_al
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
+                # FIXME variable ID here
                 wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack # see gymma_offline.yaml
                 ## enemy_obs ought to add attack_action_infos
                 obs_en_dim += surrogate_decomposer.n_actions_attack

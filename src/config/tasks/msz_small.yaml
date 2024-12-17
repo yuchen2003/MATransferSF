@@ -12,8 +12,8 @@ train_tasks_data_quality: {
 }
 
 tasks_offline_bottom_data_paths: {
-  "3m": "",
-  "2s3z": "",
+  "3m": "/home/amax/xyc/MATr/offpymarl/dataset/sc2/3m/expert/seed_1_maa2c_2024-12-15_15-22-03",
+  "2s3z": "/home/amax/xyc/MATr/offpymarl/dataset/sc2/2s3z/expert/seed_1_maa2c_2024-12-15_15-22-06",
 }
 
 test_tasks: ["3m", "2s3z"]

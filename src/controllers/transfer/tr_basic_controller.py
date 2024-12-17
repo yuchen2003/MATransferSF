@@ -3,7 +3,9 @@ from modules.decomposers import REGISTRY as decomposer_REGISTRY
 from components.action_selectors import REGISTRY as action_REGISTRY
 import torch as th
 
-class MTBasicMAC:
+SUPPORTED_ENV = ["sc2", "gymma"]
+
+class TrBasicMAC:
     def __init__(self, all_tasks, task2scheme, task2args, main_args):
         self.all_tasks = all_tasks
         self.task2scheme = task2scheme
@@ -14,7 +16,7 @@ class MTBasicMAC:
         self.agent_output_type = main_args.agent_output_type
         self.action_selector = action_REGISTRY[main_args.action_selector](main_args)
 
-        if self.main_args.env not in ["sc2", "gymma"]:
+        if self.main_args.env not in SUPPORTED_ENV:
             raise NotImplementedError
         env2decomposer = {
             "sc2": "sc2_decomposer",

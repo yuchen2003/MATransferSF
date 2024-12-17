@@ -59,6 +59,7 @@ class Logger:
             name=run_name,
             group=group_name,
             mode=mode,
+            notes=config["wandb_note"],
         )
 
         self.console_logger.info("*******************")

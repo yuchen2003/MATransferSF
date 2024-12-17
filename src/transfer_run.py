@@ -1,3 +1,6 @@
+'''
+TRAIN several components offline and LEARN policy online
+'''
 import os
 import pprint
 import time
@@ -11,6 +14,7 @@ import json
 from tqdm import tqdm
 import shutil
 import copy
+from enum import Enum
 
 from learners import REGISTRY as le_REGISTRY
 from runners import REGISTRY as r_REGISTRY
@@ -80,15 +84,16 @@ def run(_run, _config, _log):
         run_sequential(args=args, logger=logger)
         
         pr.disable()
+        os.makedirs("prof", exist_ok=True)
         pr.dump_stats("prof/lbf.prof")
         s = io.StringIO()
         ps = pstats.Stats(pr, stream=s).sort_stats("cumtime")
         ps.print_stats()
-        with open('prof/lbf.txt', 'w') as f:
+        with open('prof/prof.txt', 'w') as f:
             f.write(s.getvalue())
     else:
         run_sequential(args=args, logger=logger)
-
+        
     # Clean up after finishing
     print("Exiting Main")
 
@@ -126,7 +131,7 @@ def init_tasks(task_list, main_args, logger):
     task2args, task2runner, task2buffer = {}, {}, {}
     task2scheme, task2groups, task2preprocess = {}, {}, {}
 
-    for task in task_list: 
+    for task in task_list:
         task_args = copy.deepcopy(main_args)
         if main_args.env == "sc2":
             task_args.env_args["map_name"] = task
@@ -173,21 +178,23 @@ def run_sequential(args, logger):
     # In offline training, we use t_max to denote iterations
     # Init runner so we can get env info
     args.n_tasks = len(args.train_tasks)
-    main_args = copy.deepcopy(args)  
+    # args.on_n_tasks = 1 # Assume online learning on only one task at a time
+    main_args = copy.deepcopy(args)
 
-    all_tasks = list(set(args.train_tasks + args.test_tasks))
+    # Offline Train Stage
+    all_tasks = args.train_tasks
 
     task2args, task2runner, task2buffer, task2scheme, task2groups, task2preprocess = init_tasks(all_tasks, main_args, logger)
-    task2buffer_scheme = { task: task2buffer[task].scheme for task in all_tasks}
+    task2buffer_scheme = { task: task2buffer[task].scheme for task in all_tasks }
 
+    # TODO may init decomposer, agent -> mac, runner, learner at first; 
     mac = mac_REGISTRY[main_args.mac](all_tasks, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
 
-    for task in main_args.test_tasks: 
+    for task in all_tasks: 
         task2runner[task].setup(scheme=task2scheme[task], groups=task2groups[task], preprocess=task2preprocess[task], mac=mac)
-    
+
     # define learner
     learner = le_REGISTRY[main_args.learner](mac, logger, main_args)
-
     if main_args.use_cuda:
         learner.cuda()
     
@@ -227,7 +234,7 @@ def run_sequential(args, logger):
     task2offline_buffer = {}
 
     for task in main_args.train_tasks:
-        task2offline_buffer[task] = OfflineBuffer(args=main_args, map_name=task,
+        task2offline_buffer[task] = OfflineBuffer( args=main_args, map_name=task,
                                                    quality=main_args.train_tasks_data_quality[task],
                                                    data_path=main_args.tasks_offline_bottom_data_paths[task],
                                                    max_buffer_size=main_args.offline_max_buffer_size, 
@@ -245,11 +252,44 @@ def run_sequential(args, logger):
 
     for task in all_tasks:
         task2runner[task].close_env()
-    logger.console_logger.info(f"Finished Training")
+    logger.console_logger.info(f"Finished Training, start online learning.")
+    
+    # Online Transfer Stage
+    all_tasks = args.test_tasks
+    
+    task2args, task2runner, task2buffer, task2scheme, task2groups, task2preprocess = init_tasks(all_tasks, main_args, logger)
+    task2buffer_scheme = { task: task2buffer[task].scheme for task in all_tasks}
+    task2learner = {}
+    
+    mac = mac_REGISTRY[main_args.online_mac](all_tasks, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args) # FIXME
 
+    for task in all_tasks: 
+        task2runner[task].setup(scheme=task2scheme[task], groups=task2groups[task], preprocess=task2preprocess[task], mac=mac)
+        # define learner # TODO: use learner for both offline and online
+        # learner = le_REGISTRY[main_args.online_learner](mac, logger, task2args[task])
 
+        # if main_args.use_cuda:
+        #     learner.cuda()
+        # task2learner[task] = learner
+    
+    # prepare online data buffer
+    task2online_buffer = {}
+    for task in main_args.test_tasks:
+        task2online_buffer[task] = ReplayBuffer(
+            scheme=task2scheme[task],
+            groups=task2groups[task],
+            buffer_size=args.buffer_size,
+            max_seq_length=task2args["episode_limit"] + 1,
+            preprocess=task2preprocess[task],
+            device="cpu" if args.buffer_cpu_only else args.device,
+        )
+        
+    learn_sequential(main_args.test_tasks, main_args, logger, task2learner, task2args, task2runner, task2online_buffer)
 
 def train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer):
+    '''
+    For offline learning based on multitask datasets
+    '''
     t_env = 0
     episode = 0
     t_max = main_args.t_max
@@ -266,7 +306,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
     test_start_time = time.time()
 
     with th.no_grad():
-        for task in main_args.test_tasks: 
+        for task in main_args.test_tasks:
             task2runner[task].t_env = t_env
             for _ in range(n_test_runs):
                 task2runner[task].run(test_mode=True)
@@ -315,8 +355,84 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             last_log_T = t_env
             logger.log_stat("episode", episode, t_env)
             logger.print_recent_stats()
+            
+            
+def learn_sequential(test_tasks, main_args, logger, task2learner, task2args, task2runner, task2online_buffer):
+    '''
+    For online transfer learning on multiple tasks "individually" #TODO
+    '''
+    t_env = 0
+    episode = 0
+    t_max = main_args.t_max
+    model_save_time = 0
+    last_test_T = 0
+    last_log_T = 0
+    start_time = time.time()
+    last_time = start_time
+    test_time_total = 0
+
+    batch_size_test = main_args.offline_batch_size
+    batch_size_run = main_args.batch_size_run # num of parellel envs
+    n_test_runs = max(1, main_args.test_nepisode//batch_size_run)
+    test_start_time = time.time()
+
+    with th.no_grad():
+        for task in main_args.test_tasks:
+            task2runner[task].t_env = t_env
+            for _ in range(n_test_runs):
+                task2runner[task].run(test_mode=True)
+    test_time_total += time.time() - test_start_time
+
+    for task in test_tasks:
+        args, runner, buffer, learner = task2args[task], task2runner[task], task2online_buffer[task], task2learner[task]
+        while t_env < t_max:
+            episode_batch = runner.run(test_mode=False)
+            buffer.insert_episode_batch(episode_batch)
+            
+            if buffer.can_sample(args.batch_size):
+                for _run in range(runner.batch_size):
+                    episode_sample = buffer.sample(args.batch_size)
+                    max_ep_t = episode_sample.max_t_filled()
+                    episode_sample = episode_sample[:, : max_ep_t]
+                    
+                    if episode_sample.device != args.device:
+                        episode_sample.to(args.device)
+                        
+                    learner.train(episode_sample, t_env, episode, task)
+            
+                    t_env += 1
+                    episode += batch_size_run
+                    
+            if (t_env - last_test_T) / main_args.test_interval >= 1 or t_env >= t_max:
+                test_start_time = time.time()
+                
+                with th.no_grad():
+                    runner.t_env = t_env
+                    for _ in range(n_test_runs):
+                        runner.run(test_mode=True)
+
+                test_time_total += time.time() - test_start_time
+                
+                logger.console_logger.info("Step: {} / {}".format(t_env, t_max))
+                logger.console_logger.info("Estimated time left: {}. Time passed: {}. Test time cost: {}".format(
+                    time_left(last_time, last_test_T, t_env, t_max), time_str(time.time() - start_time), time_str(test_time_total)
+                ))
+                last_time = time.time()
+                last_test_T = t_env
+            
+            if main_args.save_model and (t_env - model_save_time >= main_args.save_model_interval or model_save_time == 0):
+                save_path = os.path.join(main_args.save_dir, str(t_env), "tr")
+                os.makedirs(save_path, exist_ok=True)
+                logger.console_logger.info("Saving models to {}".format(save_path))
+                learner.save_models(save_path)
+                model_save_time = t_env
+            
+            if (t_env - last_log_T) >= main_args.log_interval:
+                last_log_T = t_env
+                logger.log_stat("episode", episode, t_env)
+                logger.print_recent_stats()
         
-        
+
 def args_sanity_check(config, _log):
 
     # set CUDA flags

@@ -121,8 +121,9 @@ class Transformer(nn.Module):
 
         # tokens = self.token_embedding(x)
         # tokens = torch.cat((x, h), 1)
-        assert e == self.emb
+        
         b, t, e = tokens.size()
+        assert e == self.emb
 
         x, mask = self.tblocks((tokens, mask))
 

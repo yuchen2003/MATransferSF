@@ -25,7 +25,12 @@ REGISTRY["actor_critic_learner"] = ActorCriticLearner
 from .multi_task.mt_q_learner import MTQLearner
 from .multi_task.mt_matd3_learner import MTMATD3Learner
 from .multi_task.mt_bc_learner import MTBCLearner
+from .multi_task.odis_learner import ODISLearner
 
 REGISTRY["mt_q_learner"] = MTQLearner
 REGISTRY["mt_matd3_learner"] = MTMATD3Learner
 REGISTRY["mt_bc_learner"] = MTBCLearner
+REGISTRY["odis_learner"] = ODISLearner
+
+from .transfer.tr_learner import TransferLearner
+REGISTRY["tr_learner"] = TransferLearner

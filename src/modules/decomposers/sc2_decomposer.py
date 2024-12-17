@@ -188,13 +188,13 @@ class SC2Decomposer:
                 self.unit_type2_order["stalker"] = 1
                 self.unit_type2_order["zeolot"] = 2
             case [3, "MMM"]:
-                self.unit_typ2e_order["marauder"] = 0
+                self.unit_type2_order["marauder"] = 0
                 self.unit_type2_order["marine"] = 1
                 self.unit_type2_order["medivac"] = 2
             case [5, "marines"]:
                 self.unit_type2_order["marine"] = 0
             case [5, "MMM"]:
-                self.unit_typ2e_order["marauder"] = 0
+                self.unit_type2_order["marauder"] = 0
                 self.unit_type2_order["marine"] = 1
                 self.unit_type2_order["medivac"] = 2
             case [5, "stalkers_and_zealots"]:

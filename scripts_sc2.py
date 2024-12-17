@@ -1,9 +1,7 @@
-# python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=expert --save_replay_buffer=./replay_buffer --num_episodes_collected=100 --stop_return=0.9 --seed=1 with env_args.time_limit=50 env_args.key=lbforaging:Foraging-8x8-2p-2f-coop-v1
+# python src/main.py --collect --config=<alg> --env-config=sc2_collect with env_args.map_name=<map_name> offline_data_quality=<quality> save_replay_buffer=<whether_to_save_replay> num_episodes_collected=<num_episodes_per_collection> stop_winrate=<stop_winrate> --seed=<seed>
 
 import subprocess
 from multiprocessing import Pool
-import gym
-import lbforaging
 import sys
 
 tasks = []
@@ -16,22 +14,23 @@ CUDA_VISIBLE_DEVICES={} \
 python src/main.py \
 --collect \
 --config={} \
---env-config=gymma_collect \
+--env-config=sc2_collect \
 --offline_data_quality=expert \
---num_episodes_collected=5000 \
+--num_episodes_collected=100 \
 --save_model_interval=500000 \
---stop_return=0.9 \
+--stop_winrate=0.9 \
 --seed=1 \
---time_limit=25 \
---t_max=4005000 \
---key=lbforaging:{} \
+--t_max=40050 \
+--map_name={} \
+--use_wandb=False \
 "
+
 # , (3, 2), (4, 2), (4, 3)
-for p, f in [(2, 1), (2, 2), (3, 2)]:
-    tasks.append(f"Foraging-5x5-{p}p-{f}f-coop-v2")
+for map in ['3m', '2s3z']:
+    tasks.append(map)
 
 for t in tasks:
-    for alg in ['qmix', 'maa2c']:
+    for alg in ['maa2c']:
         cmds.append(cmd_tpl.format(time, dev_id % 2, alg, t))
         time += 3
         dev_id += 1

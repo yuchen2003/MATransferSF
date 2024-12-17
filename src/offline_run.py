@@ -220,6 +220,7 @@ def train_sequential(args, logger, learner, runner, offline_buffer):
         learner.train(episode_sample, t_env, episode)
         
         t_env += 1
+        print(t_env)
         episode += batch_size_run
         # Execute test runs once in a while & final evaluation
         if (t_env - last_test_T) / args.test_interval >= 1 or t_env >= t_max:

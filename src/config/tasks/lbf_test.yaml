@@ -1,0 +1,24 @@
+# ----- test lbf transfer setting config -----
+
+# get env information
+env: "gymma"
+online_learner: "..." # TODO 
+
+# get task information
+task: "lbf_test"
+# define train tasks and test tasks
+train_tasks: [
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2", 
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2", 
+]
+train_tasks_data_quality: {
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2": "expert",
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2": "expert",
+}
+
+tasks_offline_bottom_data_paths: {
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2": "/home/amax/xyc/MATr/offpymarl/dataset/lbforaging/Foraging-5x5-2p-2f-coop-v2/expert/seed_1_qmix_2024-12-12_10-24-15",
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2": "/home/amax/xyc/MATr/offpymarl/dataset/lbforaging/Foraging-5x5-3p-2f-coop-v2/expert/seed_1_qmix_2024-12-12_10-24-21",
+}
+test_tasks: ["lbforaging:Foraging-5x5-2p-2f-coop-v2", "lbforaging:Foraging-5x5-3p-2f-coop-v2"]
+# test_tasks: ["Foraging-5x5-4p-2f-coop-v2"]

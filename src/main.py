@@ -17,6 +17,7 @@ from run import run as run
 from collect_data import run as collect_data
 from offline_run import run as offline_run
 from multi_task_offline_run import run as mto_run 
+from transfer_run import run as tr_run
 
 SETTINGS['CAPTURE_MODE'] = "fd" # set to "no" if you want to see stdout/stderr in console
 logger = get_logger()
@@ -26,7 +27,6 @@ ex.logger = logger
 ex.captured_out_filter = apply_backspaces_and_linefeeds
 
 results_path = os.path.join(dirname(dirname(abspath(__file__))), "results")
-
 
 @ex.main
 def my_main(_run, _config, _log):
@@ -46,6 +46,8 @@ def my_main(_run, _config, _log):
             offline_run(_run, config, _log)
         case "mto":
             mto_run(_run, config, _log)
+        case "transfer":
+            tr_run(_run, config, _log)
         case _: 
             raise NotImplementedError("hhhh")
 
@@ -195,7 +197,7 @@ if __name__ == '__main__':
     else:
         config_dict['remark'] = ''
 
-    print(config_dict["offline_data_quality"])
+    # print(config_dict["offline_data_quality"])
     unique_token = "seed_{}_{}{}_{}".format(config_dict['seed'], config_dict['name'], config_dict['remark'], datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     config_dict['unique_token'] = unique_token
 
@@ -246,6 +248,15 @@ if __name__ == '__main__':
             results_save_dir = os.path.join(
                 results_path, "run_online", 
                 env + os.sep + map_name, 
+                config_dict['name'] + config_dict['remark'],
+                unique_token
+            )
+        case "transfer":
+            if config_dict['evaluate']:
+                results_path = os.path.join(results_path, 'evaluate')
+            results_save_dir = os.path.join(
+                results_path, "transfer", env, config_dict['task'],
+                '+'.join([f'{k}-{v}' for k, v in config_dict['train_tasks_data_quality'].items()]),
                 config_dict['name'] + config_dict['remark'],
                 unique_token
             )
