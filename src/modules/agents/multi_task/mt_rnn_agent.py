@@ -15,9 +15,7 @@ class MTRNNAgent(nn.Module):
         self.task2decomposer = task2decomposer
         self.task2n_agents = task2n_agents
         self.args = args
-        env, map_name = args.env_args['key'].split(':')
-        self.env = env
-        self.map_name = map_name
+        self.have_attack_action = (surrogate_decomposer.n_actions != surrogate_decomposer.n_actions_no_attack)
 
         #### define various dimension information
         ## set attributes
@@ -47,13 +45,12 @@ class MTRNNAgent(nn.Module):
         # enemy_feats (bs*n_agents, n_enemy, d)
         # h (bs*n_agents, d)
         
-        attack_action_input = th.cat([enemy_feature, h.unsqueeze(1).repeat(1, enemy_feats.size(1), 1)], dim=-1)
-        attack_action_q = self.attack_action_layer(attack_action_input).squeeze(-1) # (bs*n_agents, n_enemy) 
-        if self.env == 'lbforaging':
-            # player do not distinguish foods when pickup
-            attack_action_q = attack_action_q.max(-1, keepdim=True).values
-
-        q = th.cat([wo_action_q, attack_action_q], dim=-1)
+        if self.have_attack_action:
+            attack_action_input = th.cat([enemy_feature, h.unsqueeze(1).repeat(1, enemy_feats.size(1), 1)], dim=-1)
+            attack_action_q = self.attack_action_layer(attack_action_input).squeeze(-1) # (bs*n_agents, n_enemy) 
+            q = th.cat([wo_action_q, attack_action_q], dim=-1)
+        else:
+            q = wo_action_q
 
         return q, h
 
@@ -74,7 +71,6 @@ class MTRNNAgent(nn.Module):
         bs = int(own_obs.shape[0]/task_n_agents)
 
         # embed agent_id inputs and decompose last_action_inputs 
-        # FIXME variable ID here
         agent_id_inputs = [th.as_tensor(binary_embed(i + 1, self.args.id_length, self.args.max_agent), dtype=own_obs.dtype) for i in range(task_n_agents)]
         agent_id_inputs = th.stack(agent_id_inputs, dim=0).repeat(bs, 1).to(own_obs.device)
         _, attack_action_info, compact_action_states = task_decomposer.decompose_action_info(last_action_inputs)
@@ -83,10 +79,11 @@ class MTRNNAgent(nn.Module):
         own_obs = th.cat([own_obs, agent_id_inputs, compact_action_states], dim=-1)
 
         # incorporate attack_action_info (n_enemies, bs*n_agents, 1) into enemy_feats
-        attack_action_info = attack_action_info.transpose(0, 1).unsqueeze(-1) 
-        if self.env == "lbforaging":
-            attack_action_info = attack_action_info.repeat(len(enemy_feats), 1, 1)
-        enemy_feats = th.cat([th.stack(enemy_feats, dim=0), attack_action_info], dim=-1).transpose(0, 1) 
+        attack_action_info = attack_action_info.transpose(0, 1).unsqueeze(-1)
+        if self.have_attack_action:
+            enemy_feats = th.cat([th.stack(enemy_feats, dim=0), attack_action_info], dim=-1).transpose(0, 1) 
+        else:
+            enemy_feats = th.stack(enemy_feats, dim=0).transpose(0, 1)
         # (bs*n_agents, n_enemies, obs_nf_en+1)
         ally_feats = th.stack(ally_feats, dim=0).transpose(0, 1)
 

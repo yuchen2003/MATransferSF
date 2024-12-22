@@ -152,7 +152,6 @@ class MTBasicMAC:
             obs_shape = task_scheme["obs"]["vshape"]
             input_shape = obs_shape
             last_action_shape = task_scheme["actions_onehot"]["vshape"][0]
-            #joint_action_shape = task_scheme["actions_onehot"]["vshape"][0] * self.task2n_agents[task]
             agent_id_shape = self.task2n_agents[task]
             if self.task2args[task].obs_last_action:
                 input_shape += last_action_shape
@@ -164,6 +163,5 @@ class MTBasicMAC:
                 "obs_shape": obs_shape,
                 "last_action_shape": last_action_shape,
                 "agent_id_shape": agent_id_shape,
-                #"joint_action_shape": joint_action_shape,
             }
         return task2input_shape_info

@@ -8,5 +8,5 @@ from .multi_task.odis_agent import ODISAgent
 REGISTRY["mt_rnn"] = MTRNNAgent
 REGISTRY["mt_odis"] = ODISAgent
 
-from .transfer.tr_rnn_agent import TrRNNAgent
-REGISTRY["tr_rnn"] = TrRNNAgent
+from .transfer.tr_sf_rnn_agent import TrSFRNNAgent
+REGISTRY["tr_sf_rnn"] = TrSFRNNAgent

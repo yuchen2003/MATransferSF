@@ -89,7 +89,9 @@ class MTEpisodeRunner:
         actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env, task=self.task, test_mode=test_mode)
 
         self.batch.update({"actions": actions}, ts=self.t)      
-     
+
+        # if not test_mode:
+        #     self.t_env += self.t
         cur_stats = self.test_stats if test_mode else self.train_stats
         cur_returns = self.test_returns if test_mode else self.train_returns
         log_prefix = f"{'pretrain/' if pretrain else ''}{self.task}/{'test_' if test_mode else ''}"

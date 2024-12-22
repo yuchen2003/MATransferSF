@@ -2,12 +2,13 @@ from modules.agents import REGISTRY as agent_REGISTRY
 from modules.decomposers import REGISTRY as decomposer_REGISTRY
 from components.action_selectors import REGISTRY as action_REGISTRY
 import torch as th
-
-SUPPORTED_ENV = ["sc2", "gymma"]
+import numpy as np
 
 class TrBasicMAC:
-    def __init__(self, all_tasks, task2scheme, task2args, main_args):
+    def __init__(self, all_tasks, train_tasks, trans_tasks, task2scheme, task2args, main_args):
         self.all_tasks = all_tasks
+        self.train_tasks = train_tasks
+        self.trans_tasks = trans_tasks
         self.task2scheme = task2scheme
         self.task2args = task2args
         self.task2n_agents = {task: self.task2args[task].n_agents for task in all_tasks}
@@ -16,7 +17,7 @@ class TrBasicMAC:
         self.agent_output_type = main_args.agent_output_type
         self.action_selector = action_REGISTRY[main_args.action_selector](main_args)
 
-        if self.main_args.env not in SUPPORTED_ENV:
+        if self.main_args.env not in ["sc2", "gymma"]:
             raise NotImplementedError
         env2decomposer = {
             "sc2": "sc2_decomposer",
@@ -74,12 +75,14 @@ class TrBasicMAC:
         chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode)
         return chosen_actions
 
-    def forward(self, ep_batch, t, task, test_mode=False, rewards=None):
+    def forward(self, ep_batch, t, task, test_mode=False, rewards=None, is_offline=True):
         agent_inputs = self._build_inputs(ep_batch, t, task)
         avail_actions = ep_batch["avail_actions"][:, t]
+        cur_actions = None #TODO
 
         #bs = agent_inputs.shape[0]//self.task2n_agents[task]
-        agent_outs, self.hidden_states = self.agent(agent_inputs, self.hidden_states, task)
+        self.hidden_states, agent_outs, r_hat, w, psi_tilde, phi_tilde, phi_hat, recon_action = self.agent(agent_inputs, cur_actions, self.hidden_states, task)
+        # TODO separate offline forward and online forward; above is offline
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":
@@ -104,7 +107,16 @@ class TrBasicMAC:
                     # Zero out the unavailable actions, which have been softmax.
                     agent_outs[reshaped_avail_actions == 0] = 0.0
         
-        return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1)
+        return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1), r_hat, w, psi_tilde, phi_tilde, phi_hat, recon_action
+    
+    def pretrain_forward(self, ep_batch, t, task):
+        # agent_inputs = self._build_inputs_batch(ep_batch, t, task)
+        agent_inputs = self._build_inputs(ep_batch, t, task)
+        cur_actions = ep_batch["actions_onehot"][:, t]
+        
+        self.hidden_states, phi_out, mu, logvar, r_shaping, action_recon = self.agent.pretrain_forward(agent_inputs, cur_actions, self.hidden_states, task)
+        
+        return phi_out, mu, logvar, r_shaping, action_recon
     
     def init_hidden(self, batch_size, task):
         self.hidden_states = self.agent.init_hidden().unsqueeze(0).expand(batch_size, self.task2n_agents[task], -1)
@@ -117,6 +129,12 @@ class TrBasicMAC:
     
     def cuda(self):
         self.agent.cuda()
+
+    def off(self):
+        self.agent.off() # TODO 如果这里用不到就放在learner.on/off上
+        
+    def on(self):
+        self.agent.on()
 
     def save_models(self, path):
         th.save(self.agent.state_dict(), "{}/agent.th".format(path))
@@ -145,6 +163,22 @@ class TrBasicMAC:
             inputs.append(th.eye(n_agents, device=batch.device).unsqueeze(0).expand(bs, -1, -1))
         
         inputs = th.cat([x.reshape(bs*n_agents, -1) for x in inputs], dim=1)
+        return inputs
+    
+    def _build_inputs_batch(self, batch, t: np.array, task):
+        # build input batch for parallel on seq
+        bs = batch.batch_size
+        seq_len = len(t)
+        t_1 = (t-1)[1:]
+        inputs = []
+        inputs.append(batch["obs"][:, t])
+        task_args, n_agents = self.task2args[task], self.task2n_agents[task]
+        if task_args.obs_last_action:
+            inputs.append(th.cat([th.zeros_like(batch["actions_onehot"][:, 0]).unsqueeze(1), batch["actions_onehot"][:, t_1]], dim=1))
+        if task_args.obs_agent_id:
+            inputs.append(th.eye(n_agents, device=batch.device).unsqueeze(0).expand(bs, seq_len, -1, -1))
+            
+        inputs = th.cat([x.reshape(bs*n_agents*seq_len, -1) for x in inputs], dim=-1)
         return inputs
     
     def _get_input_shape(self):

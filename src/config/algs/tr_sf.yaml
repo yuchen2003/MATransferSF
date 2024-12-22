@@ -1,0 +1,43 @@
+# --- Transfer with SF specific parameters ---
+
+# use multinomial selector
+action_selector: "multinomial"
+epsilon_start: .5
+epsilon_finish: .01
+epsilon_anneal_time: 50000
+
+runner: "mt_episode" # the same way to handle multi-task info in runners
+
+buffer_size: 5000
+
+# learner
+agent_output_type: "pi_logits"
+learner: "tr_sf_learner"
+double_q: True
+mixer: mt_vdn # TODO QPLEX
+pretrain_steps: 100000
+pretrain_batch_size: 256
+pretrain_save_model_interval: 
+offline_train_steps: 50500
+t_max: 2000500 # for online train
+ckpt_stage: # TODO: 0: not trained; 1: pretrained; 2: pretrain + offline train, only do online learning 
+
+# agent type
+agent: "tr_sf_rnn"
+phi_dim: 10
+
+# mac
+mac: "tr_basic_mac"
+is_single_task_online: True
+
+# params about observation decomposition
+id_length: 4
+max_agent: 15
+
+
+# params about mt mixing network
+entity_embed_dim: 64
+attn_embed_dim: 8
+head: 1
+
+name: "tr_sf"

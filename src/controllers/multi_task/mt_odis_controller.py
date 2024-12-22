@@ -12,7 +12,7 @@ import torch.nn.functional as F
 class ODISMAC:
     def __init__(self, all_tasks, task2scheme, task2args, main_args):
         # set some task-specific attributes
-        self.train_tasks = all_tasks
+        self.all_tasks = all_tasks
         self.task2scheme = task2scheme
         self.task2args = task2args
         self.task2n_agents = {task: self.task2args[task].n_agents for task in all_tasks}
@@ -219,18 +219,20 @@ class ODISMAC:
 
     def _get_input_shape(self):
         task2input_shape_info = {}
-        for task in self.train_tasks:
+        for task in self.all_tasks:
             task_scheme = self.task2scheme[task]
-            input_shape = task_scheme["obs"]["vshape"]
-            last_action_shape, agent_id_shape = 0, 0
+            obs_shape = task_scheme["obs"]["vshape"]
+            input_shape = obs_shape
+            last_action_shape = task_scheme["actions_onehot"]["vshape"][0]
+            agent_id_shape = self.task2n_agents[task]
             if self.task2args[task].obs_last_action:
-                input_shape += task_scheme["actions_onehot"]["vshape"][0]
-                last_action_shape = task_scheme["actions_onehot"]["vshape"][0]
+                input_shape += last_action_shape
             if self.task2args[task].obs_agent_id:
-                input_shape += self.task2n_agents[task]
-                agent_id_shape = self.task2n_agents[task]
+                input_shape += agent_id_shape
+
             task2input_shape_info[task] = {
                 "input_shape": input_shape,
+                "obs_shape": obs_shape,
                 "last_action_shape": last_action_shape,
                 "agent_id_shape": agent_id_shape,
             }

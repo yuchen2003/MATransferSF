@@ -32,5 +32,5 @@ REGISTRY["mt_matd3_learner"] = MTMATD3Learner
 REGISTRY["mt_bc_learner"] = MTBCLearner
 REGISTRY["odis_learner"] = ODISLearner
 
-from .transfer.tr_learner import TransferLearner
-REGISTRY["tr_learner"] = TransferLearner
+from .transfer.tr_sf_learner import TransferSFLearner
+REGISTRY["tr_sf_learner"] = TransferSFLearner

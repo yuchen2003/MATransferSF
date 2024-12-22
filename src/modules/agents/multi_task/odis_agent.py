@@ -17,9 +17,6 @@ class ODISAgent(nn.Module):
         self.task2decomposer = task2decomposer
         self.task2n_agents = task2n_agents
         self.args = args
-        env, map_name = args.env_args['key'].split(':')
-        self.env = env
-        self.map_name = map_name
 
         self.c = args.c_step
         self.skill_dim = args.skill_dim
@@ -105,9 +102,6 @@ class StateEncoder(nn.Module):
 
         self.task2n_agents = task2n_agents
         self.args = args
-        env, map_name = args.env_args['key'].split(':')
-        self.env = env
-        self.map_name = map_name
 
         self.skill_dim = args.skill_dim
 
@@ -117,7 +111,7 @@ class StateEncoder(nn.Module):
 
         # get detailed state shape information
         state_nf_al, state_nf_en, timestep_state_dim = \
-            task2decomposer_.state_nf_al, task2decomposer_.state_nf_en, task2decomposer_.timestep_number_state_dim
+            task2decomposer_.aligned_state_nf_al, task2decomposer_.aligned_state_nf_en, task2decomposer_.timestep_number_state_dim
         self.state_last_action, self.state_timestep_number = task2decomposer_.state_last_action, task2decomposer_.state_timestep_number
 
         self.n_actions_no_attack = task2decomposer_.n_actions_no_attack
@@ -206,16 +200,13 @@ class ObsEncoder(nn.Module):
         self.task2decomposer = task2decomposer
         self.task2n_agents = task2n_agents
         self.args = args
-        env, map_name = args.env_args['key'].split(':')
-        self.env = env
-        self.map_name = map_name
 
         self.skill_dim = args.skill_dim
 
         self.entity_embed_dim = args.entity_embed_dim
         self.attn_embed_dim = args.attn_embed_dim
-        obs_own_dim = decomposer.own_obs_dim
-        obs_en_dim, obs_al_dim = decomposer.obs_nf_en, decomposer.obs_nf_al
+        obs_own_dim = decomposer.aligned_own_obs_dim
+        obs_en_dim, obs_al_dim = decomposer.aligned_obs_nf_en, decomposer.aligned_obs_nf_al
         n_actions_no_attack = decomposer.n_actions_no_attack
         
         has_attack_action = n_actions_no_attack != decomposer.n_actions
@@ -272,8 +263,6 @@ class ObsEncoder(nn.Module):
         # incorporate attack_action_info into enemy_feats
         if np.prod(attack_action_info.shape) > 0:
             attack_action_info = attack_action_info.transpose(0, 1).unsqueeze(-1)
-            if self.env == "lbforaging":
-                attack_action_info = attack_action_info.repeat(len(enemy_feats), 1, 1)
             enemy_feats = th.cat([th.stack(enemy_feats, dim=0), attack_action_info], dim=-1)
         else:
             enemy_feats = th.stack(enemy_feats, dim=0)
@@ -319,9 +308,6 @@ class Decoder(nn.Module):
         self.task2decomposer = task2decomposer
         self.task2n_agents = task2n_agents
         self.args = args
-        env, map_name = args.env_args['key'].split(':')
-        self.env = env
-        self.map_name = map_name
 
         self.skill_dim = args.skill_dim
 
@@ -331,8 +317,8 @@ class Decoder(nn.Module):
         self.attn_embed_dim = args.attn_embed_dim
         # self.task_repre_dim = args.task_repre_dim
         ## get obs shape information
-        obs_own_dim = decomposer.own_obs_dim
-        obs_en_dim, obs_al_dim = decomposer.obs_nf_en, decomposer.obs_nf_al
+        obs_own_dim = decomposer.aligned_own_obs_dim
+        obs_en_dim, obs_al_dim = decomposer.aligned_obs_nf_en, decomposer.aligned_obs_nf_al
         n_actions_no_attack = decomposer.n_actions_no_attack
         
         has_attack_action = n_actions_no_attack != decomposer.n_actions
@@ -392,8 +378,6 @@ class Decoder(nn.Module):
         # incorporate attack_action_info into enemy_feats
         if np.prod(attack_action_info.shape) > 0:
             attack_action_info = attack_action_info.transpose(0, 1).unsqueeze(-1)
-            if self.env == "lbforaging":
-                attack_action_info = attack_action_info.repeat(len(enemy_feats), 1, 1)
             enemy_feats = th.cat([th.stack(enemy_feats, dim=0), attack_action_info], dim=-1)
         else:
             enemy_feats = th.stack(enemy_feats, dim=0)
@@ -425,10 +409,6 @@ class Decoder(nn.Module):
                 q_enemy_mean = th.mean(q_enemy, 1, True)
                 q_attack_list.append(q_enemy_mean)
             q_attack = th.stack(q_attack_list, dim=1).squeeze()
-
-            if self.env == 'lbforaging':
-                # player do not distinguish foods when pickup
-                q_attack = q_attack.max(-1, keepdim=True).values
             q = th.cat([q_base, q_attack], dim=-1)
 
         return q, h

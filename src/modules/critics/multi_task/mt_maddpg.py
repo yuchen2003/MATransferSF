@@ -106,8 +106,6 @@ class MTMADDPGCritic(nn.Module):
         bs, T, _, _ = individual_inputs.shape
         individual_inputs = individual_inputs.reshape(bs*T*task_n_agents, -1)
        
-        
-
         ## Build inputs/feats
         if self.args.critic_last_action:
             obs_inputs, last_action_inputs, agent_id_inputs = individual_inputs[:, :obs_dim], \

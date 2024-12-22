@@ -13,22 +13,25 @@ time = 0 # Avoid timestamp conflicts
 cmd_tpl = "sleep {}; \
 CUDA_VISIBLE_DEVICES={} \
 python src/main.py \
---mto \
+--transfer \
 --config={} \
---env-config=gymma_offline \
+--env-config=gymma_transfer \
 --task-config=lbf_test \
 --seed=1 \
 --time_limit=25 \
---t_max=100 \
---use_wandb=False \
+--t_max=50200 \
+--online_t_max=10200 \
+--use_wandb=True \
+--wandb_note=test-transfer \
 "
+
 
 # , (3, 2), (4, 2), (4, 3)
 for p, f in [(2, 2)]:
     tasks.append(f"Foraging-5x5-{p}p-{f}f-coop-v2")
 
 for t in tasks:
-    for alg in ['mt_bc']:
+    for alg in ['tr_bc']:
         cmds.append(cmd_tpl.format(time, dev_id % 2, alg))
         time += 3
         dev_id += 1
@@ -45,7 +48,7 @@ if __name__ == '__main__':
         print('  ', cmd)
     
     ret = None
-    if argv[-1] != 'testcmd':
+    if argv[-1] != 'tc': # testcmd
         with Pool(processes=len(cmds)) as pool:
             ret = pool.map(run_cmd, cmds)
         

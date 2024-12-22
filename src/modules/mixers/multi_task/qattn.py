@@ -14,7 +14,7 @@ class QMixer(nn.Module):
 
         # get detailed state shape information
         state_nf_al, state_nf_en, timestep_state_dim = \
-            surrogate_decomposer.state_nf_al, surrogate_decomposer.state_nf_en, surrogate_decomposer.timestep_number_state_dim
+            surrogate_decomposer.aligned_state_nf_al, surrogate_decomposer.aligned_state_nf_en, surrogate_decomposer.timestep_number_state_dim
         self.state_last_action, self.state_timestep_number = surrogate_decomposer.state_last_action, surrogate_decomposer.state_timestep_number
 
         # get action dimension information

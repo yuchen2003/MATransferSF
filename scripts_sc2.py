@@ -48,7 +48,7 @@ if __name__ == '__main__':
     
     
     ret = None
-    if argv[-1] != 'testcmd':
+    if argv[-1] != 'tc': # testcmd
         with Pool(processes=len(cmds)) as pool:
             ret = pool.map(run_cmd, cmds)
         
