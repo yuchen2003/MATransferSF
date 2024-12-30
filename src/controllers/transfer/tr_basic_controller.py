@@ -3,6 +3,7 @@ from modules.decomposers import REGISTRY as decomposer_REGISTRY
 from components.action_selectors import REGISTRY as action_REGISTRY
 import torch as th
 import numpy as np
+import torch.nn.functional as F
 
 class TrBasicMAC:
     def __init__(self, all_tasks, train_tasks, trans_tasks, task2scheme, task2args, main_args):
@@ -66,48 +67,58 @@ class TrBasicMAC:
         # build agents
         self.task2input_shape_info = self._get_input_shape()
         self._build_agents(self.task2input_shape_info)
+        self.task2weights = {}        
+        self.phi_dim = self.agent.phi_dim
+        for task in self.all_tasks: # NOTE init for all tasks; when eval on trained task, w is reused; when eval on new task, w here is to be learned
+            self.task2weights.update({task: th.randn(1, self.phi_dim, requires_grad=True, device=th.device(self.main_args.device))})
         
         self.hidden_states = None
 
-    def select_actions(self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False):
+    def select_actions(self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False): # for execution
         avail_actions = ep_batch["avail_actions"][:, t_ep]
-        agent_outputs = self.forward(ep_batch, t_ep, task, test_mode=test_mode)
+        psi = self.forward(ep_batch, t_ep, task, test_mode=test_mode)[0]
+        psi = psi.transpose(-1, -2)
+        agent_outputs = (psi * self.task2weights[task]).sum(dim=-1) # TODO apply GPI policy
         chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode)
         return chosen_actions
 
-    def forward(self, ep_batch, t, task, test_mode=False, rewards=None, is_offline=True):
+    def forward(self, ep_batch, t, task, test_mode=False): # for training offline|online
+        # NOTE online forward: train the same psi network for unseen task weights
         agent_inputs = self._build_inputs(ep_batch, t, task)
-        avail_actions = ep_batch["avail_actions"][:, t]
-        cur_actions = None #TODO
+        avail_actions = ep_batch["avail_actions"][:, t] # (bs, n_agents, n_act)
+        avail_actions = avail_actions.unsqueeze(2).expand(-1, -1, self.phi_dim, -1)
+        cur_actions = ep_batch["actions_onehot"][:, t]
+        bs = ep_batch.batch_size
+        n_agents = self.task2n_agents[task]
+        task_weight = self.task2weights[task] # (1, d_phi)
 
         #bs = agent_inputs.shape[0]//self.task2n_agents[task]
-        self.hidden_states, agent_outs, r_hat, w, psi_tilde, phi_tilde, phi_hat, recon_action = self.agent(agent_inputs, cur_actions, self.hidden_states, task)
-        # TODO separate offline forward and online forward; above is offline
+        self.hidden_states, psi, phi, phi_hat, phi_tilde, r_shaping = self.agent(agent_inputs, cur_actions, self.hidden_states, task, task_weight)
+        # psi: (bsn, d_phi, n_act)
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":
-
             if getattr(self.main_args, "mask_before_softmax", True):
                 # Make the logits for unavailable actions very negative to minimise their affect on the softmax
-                reshaped_avail_actions = avail_actions.reshape(ep_batch.batch_size * self.task2n_agents[task], -1)
-                agent_outs[reshaped_avail_actions == 0] = -1e10
+                # reshaped_avail_actions = avail_actions.reshape(bs * n_agents, self.phi_dim, -1)
+                psi[avail_actions == 0] = -1e10
 
-            agent_outs = th.nn.functional.softmax(agent_outs, dim=-1)
+            psi = F.softmax(psi, dim=-1)
             if not test_mode:
                 # Epsilon floor
-                epsilon_action_num = agent_outs.size(-1)
+                epsilon_action_num = psi.size(-1)
                 if getattr(self.main_args, "mask_before_softmax", True):
                     # With probability epsilon, we will pick an available action randomly
-                    epsilon_action_num = reshaped_avail_actions.sum(dim=1, keepdim=True).float()
+                    epsilon_action_num = avail_actions.sum(dim=-1, keepdim=True).float()
 
-                agent_outs = ((1 - self.action_selector.epsilon) * agent_outs
-                               + th.ones_like(agent_outs) * self.action_selector.epsilon/epsilon_action_num)
+                psi = ((1 - self.action_selector.epsilon) * psi
+                               + th.ones_like(psi) * self.action_selector.epsilon/epsilon_action_num)
 
                 if getattr(self.main_args, "mask_before_softmax", True):
                     # Zero out the unavailable actions, which have been softmax.
-                    agent_outs[reshaped_avail_actions == 0] = 0.0
+                    psi[avail_actions == 0] = 0.0
         
-        return agent_outs.view(ep_batch.batch_size, self.task2n_agents[task], -1), r_hat, w, psi_tilde, phi_tilde, phi_hat, recon_action
+        return psi, phi, phi_hat, phi_tilde, r_shaping
     
     def pretrain_forward(self, ep_batch, t, task):
         # agent_inputs = self._build_inputs_batch(ep_batch, t, task)
@@ -116,7 +127,13 @@ class TrBasicMAC:
         
         self.hidden_states, phi_out, mu, logvar, r_shaping, action_recon = self.agent.pretrain_forward(agent_inputs, cur_actions, self.hidden_states, task)
         
+        if self.agent_output_type == "pi_logits":
+            action_recon = F.softmax(action_recon, dim=-1)
+        
         return phi_out, mu, logvar, r_shaping, action_recon
+    
+    def online_forward(self, task2weights, cur_task):
+        pass
     
     def init_hidden(self, batch_size, task):
         self.hidden_states = self.agent.init_hidden().unsqueeze(0).expand(batch_size, self.task2n_agents[task], -1)
@@ -130,14 +147,10 @@ class TrBasicMAC:
     def cuda(self):
         self.agent.cuda()
 
-    def off(self):
-        self.agent.off() # TODO 如果这里用不到就放在learner.on/off上
-        
-    def on(self):
-        self.agent.on()
-
     def save_models(self, path):
-        th.save(self.agent.state_dict(), "{}/agent.th".format(path))
+        pass
+        # FIXME currently not saving
+        # th.save(self.agent.state_dict(), "{}/agent.th".format(path))
 
     def load_models(self, path):
         self.agent.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))

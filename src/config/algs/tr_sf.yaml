@@ -1,30 +1,43 @@
 # --- Transfer with SF specific parameters ---
 
-# use multinomial selector
-action_selector: "multinomial"
-epsilon_start: .5
-epsilon_finish: .01
+# use epsilon greedy action selector
+action_selector: "epsilon_greedy"
+epsilon_start: 1.0
+epsilon_finish: 0.05
 epsilon_anneal_time: 50000
 
 runner: "mt_episode" # the same way to handle multi-task info in runners
 
 buffer_size: 5000
 
-# learner
+# update the target network every {} episodes
+target_update_interval_or_tau: 200
+
+# learner />
 agent_output_type: "pi_logits"
 learner: "tr_sf_learner"
 double_q: True
-mixer: mt_vdn # TODO QPLEX
-pretrain_steps: 100000
+mixer: mt_vdn # NOTE vdn, 1-qmix, qplex
+task_emb_std: 0.1
+
+# qmix
+mixing_embed_dim: 32
+hypernet_layers: 1
+hypernet_embed: 64
+
+pretrain_steps: 10
 pretrain_batch_size: 256
 pretrain_save_model_interval: 
-offline_train_steps: 50500
-t_max: 2000500 # for online train
-ckpt_stage: # TODO: 0: not trained; 1: pretrained; 2: pretrain + offline train, only do online learning 
+offline_train_steps: 20
+online_train_steps: 2000500 # for online train
+ckpt_stage: 0 # TODO: 0: not trained; 1: pretrained; 2: pretrain + offline train, only do online learning 
+
+# </ learner
 
 # agent type
 agent: "tr_sf_rnn"
-phi_dim: 10
+phi_dim: 8
+phi_hidden: 8
 
 # mac
 mac: "tr_basic_mac"

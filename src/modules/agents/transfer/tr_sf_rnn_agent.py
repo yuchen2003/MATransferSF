@@ -10,8 +10,10 @@ class TrSFRNNAgent(nn.Module):
                  task2decomposer, task2n_agents,
                  surrogate_decomposer, args) -> None:
         super(TrSFRNNAgent, self).__init__()
-        self.task2last_action_shape = {task: task2input_shape_info[task]["last_action_shape"] for task in
-                                       task2input_shape_info}
+        self.task2last_action_shape = {
+            task: task2input_shape_info[task]["last_action_shape"]
+            for task in task2input_shape_info
+        }
         self.task2decomposer = task2decomposer
         self.task2n_agents = task2n_agents
         self.args = args
@@ -22,62 +24,106 @@ class TrSFRNNAgent(nn.Module):
         self.entity_embed_dim = args.entity_embed_dim
         self.attn_embed_dim = args.attn_embed_dim
         self.hidden_dim = args.rnn_hidden_dim
-        
+
         self.phi_dim = args.phi_dim
+        self.phi_hidden = args.phi_hidden
+        
+        self.task_emb_std = args.task_emb_std
 
         #### define various networks
         ## networks for attention
         self._build_attention(surrogate_decomposer)
         self._build_policy(surrogate_decomposer)
-        
+
         ## networks for successor features
         self._build_SF(surrogate_decomposer)
-    
+
     def init_hidden(self):
         # make hidden states on the same device as model
-        return self.wo_action_layer.weight.new(1, self.args.rnn_hidden_dim).zero_()
-    
-    def forward(self, inputs, cur_action, hidden_state, task):
-        attn_feature, enemy_feats = self._get_attn_feature(inputs, task) # (bs * n_agents, entity_embed_dim * 3 * n_heads); last step actions
-        cur_no_attack_action, cur_attack_action, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
-        # compact_action = no_attack + 1(bin_attack)
-        # enemy_feats (bs*n_agents, n_enemy, x)
-        h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
-        h = self.rnn(attn_feature, h_in) # (bs*n_agents, h)
-        
-        tau_a_inputs = th.cat([h, cur_compact_action], dim=-1) # (bsn, h + no_att + 1)
-        # FIXME check all shape 
-        phi = self._phi_enc(tau_a_inputs) # (bsn, d_phi)
-        tau_phi_inputs = th.cat([h, phi], dim=-1) # (bsn, h+d_phi)
-        recon_action = self._phi_dec(h, enemy_feats, phi) # (bsn, n_act)
-        
-        phi_hat = self.phi_enc2(tau_phi_inputs)
-        group_idx = None # TODO input adv infos and calc this
-        phi_tilde = self._group_self_attn(group_idx, phi.detach()) # TODO check if detach is needed
-        psi_tilde = self.psi(tau_a_inputs)
-        
-        w = self.wGen(tau_phi_inputs) # (bsn, d_phi)
-        r_hat = self._uvf(phi_tilde.detach(), w) # (bsn,)
-        q_hat = self._uvf(psi_tilde, w) # (bsn,)
-        
-        return h, q_hat, r_hat, w, psi_tilde, phi_tilde, phi_hat, recon_action
-    
-    def pretrain_forward(self, inputs, cur_action, hidden_state, task):
+        return self.wo_action_layer_psi.weight.new(1, self.args.rnn_hidden_dim).zero_()
+
+    def forward(self, inputs, cur_action, hidden_state, task, task_weight): # psi forward
+        n_agents = self.task2n_agents[task]
         attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
-        cur_no_attack_action, cur_attack_action, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
+        _, _, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
         h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
-        h = self.rnn(attn_feature, h_in)
+        h = self.rnn(attn_feature, h_in) # (bsn, hid)
+        task_weight_emb = self._task_enc(task_weight.repeat(h.shape[0], 1)) # (bsn, hid)
+        
+        ## forward psi
+        psi_hid = self.psi(th.cat([h, task_weight_emb], dim=-1)).view(-1, self.phi_dim, self.phi_hidden) # (bsn, d_phi, phi_hid)
+        wo_action_layer_in = psi_hid
+        wo_action_psi = self.wo_action_layer_psi(wo_action_layer_in) # (bsn, d_phi, n_wo_action)
+
+        enemy_feature = self.enemy_embed(enemy_feats) # (bsn, n_enemy, hid)
+
+        if self.have_attack_action:
+            attack_action_input = th.cat(
+                [
+                    enemy_feature.unsqueeze(1).repeat(1, self.phi_dim, 1, 1),
+                    psi_hid.unsqueeze(2).repeat(1, 1, enemy_feats.size(1), 1),
+                ],
+                dim=-1,
+            )  # (bsn, d_phi, n_enemy, hid+phi_hid)
+            attack_action_psi = self.attack_action_layer_psi(attack_action_input).squeeze(-1) # (bsn, d_phi, n_enemy)
+            psi = th.cat([wo_action_psi, attack_action_psi], dim=-1)
+        else:
+            psi = wo_action_psi
+        # psi: (bsn, d_phi, n_act) -> (bs, n, d_phi, n_act)
+        psi = psi.view(-1, n_agents, self.phi_dim, cur_action.shape[-1])
+        psi_v = psi.mean(dim=-1, keepdim=True)
+        psi_a = (psi - psi_v).detach() # TODO why need (no) detach ?
+        
+        select_action = cur_action.unsqueeze(2).repeat(1, 1, self.phi_dim, 1) # (bs, n, n_act) -> (bs, n, d_phi, n_act)
+        select_action_adv = (psi_a * select_action).sum(-1) # (bs, n, d_phi)
+        adv_mask = (select_action_adv > 0).float() # according policy, (bs, n, d_phi) \in {0,1}^~; # or softly weighting agents' value/contrib in each subtask ?
+        
+        ## forward phi with masking
         tau_a_inputs = th.cat([h, cur_compact_action], dim=-1)
-        phi, mu, logvar = self._phi_enc(tau_a_inputs) # (bsn, d_phi)
+        phi_hid, _, _ = self._phi_enc(tau_a_inputs) # (bsn, d_phi, phi_hid)
+        phi = self.phi_proj(phi_hid).squeeze(-1) # (bsn, d_phi)
+        
+        # FIXME not needed
+        phi_hat_hid = self.phi_infer(th.cat([h, phi_hid.reshape(-1, self.phi_dim * self.phi_hidden)], dim=-1))
+        phi_hat = self.phi_proj(phi_hat_hid.reshape(-1, self.phi_dim, self.phi_hidden)).squeeze(-1)
+        
+        phi_hid_input = phi_hid.detach().reshape(-1, n_agents, self.phi_dim, self.phi_hidden)
+        phi_tilde_hid = self._group_self_attn(adv_mask, phi_hid_input, n_agents) # (bs, n, d_phi, phi_hid)
+        phi_tilde = self.phi_proj(phi_tilde_hid.reshape(-1, self.phi_dim, self.phi_hidden)).squeeze(-1)
+        # prophet, oracle; do not transmit back to phi enc
         
         r_shaping = self.r_shaping(h).squeeze(-1) # (bsn,)
         
-        action_recon = self._phi_dec(h, enemy_feats, phi) # （bsn, n_act)
+        return h, psi, phi, phi_hat, phi_tilde, r_shaping
+
+    def pretrain_forward(self, inputs, cur_action, hidden_state, task):
+        attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
+        _, _, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
+        h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
+        h = self.rnn(attn_feature, h_in)
+        tau_a_inputs = th.cat([h, cur_compact_action], dim=-1)
+
+        r_shaping = self.r_shaping(h).squeeze(-1) # (bsn,)
+        phi_hid, mu, logvar = self._phi_enc(tau_a_inputs) # (bsn, d_phi * phi_hid)
         
+        ## decoder />
+        wo_action_layer_in = th.cat([h, phi_hid.reshape(-1, self.phi_dim * self.phi_hidden)], dim=-1)
+        wo_action_a = self.wo_action_layer_phi(wo_action_layer_in)
+        
+        enemy_feature = self.enemy_embed(enemy_feats) # (bsn, n_enemy, hid)
+        
+        if self.have_attack_action:
+            attack_action_input = th.cat([enemy_feature, phi_hid.unsqueeze(1).repeat(1, enemy_feats.size(1), 1)], dim=-1)
+            attack_action_a = self.attack_action_layer_phi(attack_action_input).squeeze(-1) # (bsn, n_enemy)
+            action_recon = th.cat([wo_action_a, attack_action_a], dim=-1)
+        else:
+            action_recon = wo_action_a
+        ## </decoder
+        
+        phi_hid = phi_hid.view(-1, self.phi_dim, self.phi_hidden)
+        phi = self.phi_proj(phi_hid).squeeze(-1) # (bsn, d_phi)
+
         return h, phi, mu, logvar, r_shaping, action_recon
-    
-    def forward_enc2(self, inputs, hidden_state, task):
-        pass
 
     def _get_attn_feature(self, inputs, task):
         task_decomposer = self.task2decomposer[task]
@@ -88,14 +134,14 @@ class TrSFRNNAgent(nn.Module):
         obs_dim = task_decomposer.obs_dim
         obs_inputs, last_action_inputs, agent_id_inputs = inputs[:, :obs_dim], \
             inputs[:, obs_dim:obs_dim+last_action_shape], inputs[:, obs_dim+last_action_shape:]
-        
+
         # decompose observation input
         own_obs, enemy_feats, ally_feats = task_decomposer.decompose_obs(obs_inputs)    
         # own_obs: [bs*self.n_agents, own_obs_dim]
         # enemy_feats: list(bs * n_agents, obs_nf_en/obs_en_dim), len=n_enemies
         bs = int(own_obs.shape[0]/task_n_agents)
 
-        # embed agent_id inputs and decompose last_action_inputs 
+        # embed agent_id inputs and decompose last_action_inputs
         agent_id_inputs = [th.as_tensor(binary_embed(i + 1, self.args.id_length, self.args.max_agent), dtype=own_obs.dtype) for i in range(task_n_agents)]
         agent_id_inputs = th.stack(agent_id_inputs, dim=0).repeat(bs, 1).to(own_obs.device)
         _, attack_action_info, compact_action_states = task_decomposer.decompose_action_info(last_action_inputs)
@@ -112,11 +158,10 @@ class TrSFRNNAgent(nn.Module):
         # (bs*n_agents, n_enemies, obs_nf_en+1)
         ally_feats = th.stack(ally_feats, dim=0).transpose(0, 1)
 
-
         # compute k, q, v for (multi-head) attention
         own_feature = self.own_value(own_obs) #(bs * n_agents, entity_embed_dim * n_heads)
         # assert own_feature.size() == (bs * task_n_agents, self.entity_embed_dim * self.args.head), print("own feature size:", own_feature.size())
-        
+
         query = self.query(own_obs)
 
         ally_keys = self.ally_key(ally_feats)  # (bs*n_agents, n_ally, attn_dim *n_heads)
@@ -130,7 +175,7 @@ class TrSFRNNAgent(nn.Module):
         else:
             ally_feature = self.multi_head_attention(query, ally_keys, ally_values, self.attn_embed_dim)
             enemy_feature = self.multi_head_attention(query, enemy_keys, enemy_values, self.attn_embed_dim)
-        
+
         attn_feature = th.cat([own_feature, ally_feature, enemy_feature], dim=-1)
 
         return attn_feature, enemy_feats
@@ -149,7 +194,7 @@ class TrSFRNNAgent(nn.Module):
         q = q.transpose(1, 2).contiguous().view(bs*self.args.head, 1, self.attn_embed_dim)
         k = k.transpose(1, 2).contiguous().view(bs*self.args.head, -1, self.attn_embed_dim)
         v = v.transpose(1, 2).contiguous().view(bs*self.args.head, -1, self.entity_embed_dim)
-        
+
         energy = th.bmm(q, k.transpose(1, 2)) / (attn_dim ** (1 / 2))
         assert energy.shape[0] == bs * self.args.head and energy.shape[1] == 1
         # shape[2] == n_entity
@@ -157,7 +202,7 @@ class TrSFRNNAgent(nn.Module):
         score = th.bmm(score, v).view(bs, self.args.head, 1, self.entity_embed_dim) # (bs*head, 1, entity_embed_dim) 
         out = out.transpose(1, 2).contiguous().view(bs, 1, self.entity_embed_dim * self.args.head).squeeze(1)
         return out
-    
+
     def attention(self, q, k, v, attn_dim):
         """
             q: [bs*n_agents, attn_dim]
@@ -175,20 +220,25 @@ class TrSFRNNAgent(nn.Module):
         match self.args.env:
             case "sc2":
                 obs_own_dim = surrogate_decomposer.aligned_own_obs_dim
-                obs_en_dim, obs_al_dim = surrogate_decomposer.aligned_obs_nf_en, surrogate_decomposer.aligned_obs_nf_al        
+                obs_en_dim, obs_al_dim = (
+                    surrogate_decomposer.aligned_obs_nf_en,
+                    surrogate_decomposer.aligned_obs_nf_al,
+                )
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-                wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack + 1
+                wrapped_obs_own_dim = (
+                    obs_own_dim + self.args.id_length + n_actions_no_attack + 1
+                )
                 ## enemy_obs ought to add attack_action_infos
                 obs_en_dim += 1
             case "gymma":
                 obs_own_dim, obs_en_dim, obs_al_dim = surrogate_decomposer.own_obs_dim, surrogate_decomposer.obs_nf_en, surrogate_decomposer.obs_nf_al
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-                wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack # see gymma_offline.yaml
+                wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack + 1 # see the decomposers
                 ## enemy_obs ought to add attack_action_infos
                 obs_en_dim += surrogate_decomposer.n_actions_attack
             case _:
                 raise NotImplementedError
-            
+
         assert self.attn_embed_dim % self.args.head == 0
         self.query = nn.Linear(wrapped_obs_own_dim, self.attn_embed_dim * self.args.head)
         self.ally_key = nn.Linear(obs_al_dim, self.attn_embed_dim * self.args.head)
@@ -196,17 +246,17 @@ class TrSFRNNAgent(nn.Module):
         self.enemy_key = nn.Linear(obs_en_dim, self.attn_embed_dim * self.args.head)
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim * self.args.head)
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim * self.args.head)
-        
+
         # SF self attention
-        self.phi_query = nn.Linear(self.phi_dim, self.attn_embed_dim * self.args.head)
-        self.phi_key = nn.Linear(self.phi_dim, self.attn_embed_dim * self.args.head)
-        self.phi_value = nn.Linear(self.phi_dim, self.phi_dim)
+        self.phi_query = nn.Linear(self.phi_hidden, self.attn_embed_dim * self.args.head)
+        self.phi_key = nn.Linear(self.phi_hidden, self.attn_embed_dim * self.args.head)
+        self.phi_value = nn.Linear(self.phi_hidden, self.phi_hidden)
 
     def _build_policy(self, surrogate_decomposer):
         ## get obs shape information
         match self.args.env:
             case "sc2":
-                obs_en_dim = surrogate_decomposer.aligned_obs_nf_en      
+                obs_en_dim = surrogate_decomposer.aligned_obs_nf_en
                 obs_en_dim += 1
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
             case "gymma":
@@ -214,98 +264,87 @@ class TrSFRNNAgent(nn.Module):
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
             case _:
                 raise NotImplementedError
-        
 
         self.rnn = nn.GRUCell(self.entity_embed_dim * self.args.head * 3, self.args.rnn_hidden_dim)
-        
-        self.wo_action_layer = nn.Linear(self.args.rnn_hidden_dim + self.phi_dim, n_actions_no_attack)
+
+        self.wo_action_layer_psi = nn.Linear(self.phi_hidden, n_actions_no_attack)
+        self.wo_action_layer_phi = nn.Linear(self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden, n_actions_no_attack)
         ## attack action networks
+        self.attack_action_layer_psi = nn.Sequential(
+            nn.Linear(self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden, self.args.rnn_hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.args.rnn_hidden_dim, 1)
+        )
+        self.attack_action_layer_phi = nn.Sequential(
+            nn.Linear(2 * self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden , self.args.rnn_hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.args.rnn_hidden_dim, 1)
+        )
         self.enemy_embed = nn.Sequential(
             nn.Linear(obs_en_dim, self.args.rnn_hidden_dim),
             nn.ReLU(),
             nn.Linear(self.args.rnn_hidden_dim, self.args.rnn_hidden_dim)
         )
-        self.attack_action_layer = nn.Sequential(
-            nn.Linear(self.args.rnn_hidden_dim + self.args.rnn_hidden_dim + self.phi_dim, self.args.rnn_hidden_dim),
-            nn.ReLU(),
-            nn.Linear(self.args.rnn_hidden_dim, 1)
-        )
-    
+
     # For transfer learning
-    def off(self):
-        # TODO build offline learning required modules and pseudo-functions
-        pass
-    
-    def on(self):
-        # TODO build rectifier, critic, optionally new actor (Q-actor for discrete; old dec actor, new actor for disc and cont act)
-        pass
-    
     def _build_SF(self, surrogate_decomposer): 
-        # TODO 
         n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-        
+
         # include a shared local feature encoder-decoder, (local decoder is _build_policy); => \phi
-        self.phi_enc1 = FCNet(self.hidden_dim + n_actions_no_attack, 2 * self.phi_dim) # traj_hid + no_attack_actions + 1(compact attack) -> mu, logstd
-        self.phi_enc2 = FCNet(self.hidden_dim + self.phi_dim, self.phi_dim) # local inference: \phi -> \hat \phi
+        self.phi_enc = FCNet(self.hidden_dim + n_actions_no_attack + 1, 2 * self.phi_dim * self.phi_hidden) # traj_hid + no_attack_actions + 1(compact attack) -> mu, logstd (multi headed)
+        
+        self.phi_proj = nn.Linear(self.phi_dim, 1)
+        self.phi_infer = FCNet(self.hidden_dim + self.phi_dim * self.phi_hidden, self.phi_dim * self.phi_hidden) # local infer phi_tilde: \phi -> \hat \phi
         
         self.r_shaping = FCNet(self.hidden_dim, 1)
+        self.task_enc = FCNet(self.phi_dim, self.hidden_dim) # z(w)
+        self.psi = FCNet(self.hidden_dim * 2, self.phi_dim * self.phi_hidden) # h, z(w) -> psi_hid
         
-        # \psi networks; local shared
-        self.psi = FCNet(self.hidden_dim + n_actions_no_attack, self.phi_dim) # same as phi
-        
-        # QPLEX, or other mixing module with #!GAE => Advantage networks (learn additional V-net)
-            # an attn-based critic ? for population-inv #inputs
-        # sub-group advantage-based self-attention module 
-        
-        # local weightGen, phi (enc), pi (dec) should be #!inherited
-        self.wGen = FCNet(self.hidden_dim + self.phi_dim, self.phi_dim) # local weight generator that infer global weight
+    def _task_enc(self, inputs):
+        eps = th.randn_like(inputs).clamp(min=-0.5, max=0.5)
+        inputs += eps * self.task_emb_std
+        emb = self.task_enc(inputs)
+        return emb
         
     def _phi_enc(self, inputs):
-        emb1 = self.phi_enc1(inputs) # (bsn, 2*hid_dim)
-        mu, logvar = emb1[:, :self.phi_dim], emb1[:, self.phi_dim:]
-        reparam = self._reparam(mu, logvar)
-        return reparam, mu, logvar
-        
-    def _reparam(self, mu, logvar):
+        emb1 = self.phi_enc(inputs).view(-1, 2, self.phi_dim, self.phi_hidden) # (bsn, 2, d_phi, phi_hid)
+        mu, logvar = emb1[:, 0], emb1[:, 1]
+
         eps = th.randn_like(mu)
-        std = th.exp( .5 * logvar)
-        return mu + std * eps
+        std = th.exp(.5 * logvar)
+        reparam = mu + std * eps
+
+        return reparam, mu, logvar # (bsn, d_phi, phi_hid)
+
+    def _group_self_attn(self, adv_mask, phi_hid, n_agents):
+        """ Apply subgroup-based self attention on phi.
+
+        Args:
+            adv_mask (Tensor): (bs, n, d_phi) \in {0,1}^*
+            phi_hid (Tensor): (bs, n, d_phi, phi_hid)
+
+        Returns:
+            phi_tilde_hid: (bs, n, d_phi, phi_hid)
+        """
+        adv_mask = adv_mask.transpose(1, 2).reshape(-1, n_agents).unsqueeze(-1).repeat(1, 1, self.phi_hidden) # (bs*d_phi, n, phi_hid)
+        phi_hid = phi_hid.transpose(1, 2).reshape(-1, n_agents, self.phi_hidden) # (bs*d_phi, n, phi_hid)
+        phi_hid_adv = phi_hid * adv_mask
+        phi_hid_dis = phi_hid * (1. - adv_mask)
         
-    def _phi_dec(self, no_attack_in, enemy_feats, phi):
-        no_attack_in = th.cat([no_attack_in, phi], dim=-1) # (bsn, hidden+d_phi)
-        no_attack_q = self.wo_action_layer(no_attack_in)
+        # Apply (single head) self attention on phi_hid_adv, (bs*d_phi, n, attn_emb|phi_hid)
+        # NOTE or more expressive transformer may be needed !
+        assert self.args.head == 1
+        q = self.phi_query(phi_hid_adv)
+        k = self.phi_key(phi_hid_adv)
+        v = self.phi_value(phi_hid_adv)
+        energy = th.bmm(q, k.transpose(1, 2)) / (self.attn_embed_dim ** (1/2)) # (bs*d_phi, n, n)
+        score = F.softmax(energy, dim=-1)
+        attn = th.bmm(score, v) # self-attended(phi_hid_adv) (bs*d_phi, n, phi_hid)
         
-        if self.have_attack_action:
-            enemy_features = self.enemy_embed(enemy_feats)
-            attack_in = th.cat([enemy_features, 
-                                no_attack_in.unsqueeze(1).repeat(1, enemy_feats.size(1), 1),
-                                phi.unsqueeze(1).repeat(1, enemy_feats.size(1), 1)], dim=-1) 
-            # (bs*n_agent, n_enemy, 2*hidden+d_phi)
-            attack_q = self.attack_action_layer(attack_in).squeeze(-1) # (bs*n_agent, n_enemy)
-            q = th.cat([no_attack_q, attack_q], dim=-1)
-        else:
-            q = no_attack_q
-            
-        return q
-    
-    def _group_self_attn(self, group_idx, phi): # FIXME check dims
-        sub_phi = phi[:, group_idx, :] # (bs, n_agents -> n_subgroup, d_phi)
-        query = self.phi_query(sub_phi)
-        key = self.phi_key(sub_phi)
-        value = self.phi_value(sub_phi)
+        out = attn * adv_mask + phi_hid_dis
         
-        if self.args.head == 1:
-            attn_feature = self.attention(query, key, value, self.attn_embed_dim)
-        else:
-            attn_feature = self.multi_head_attention(query, key, value, self.attn_embed_dim)
-            
-        return attn_feature
-    
-    def _calc_group_idx(self, adv):
-        pass
-    
-    def _uvf(self, feat, w):
-        return th.sum(th.multiply(feat, w), dim=-1)
+        phi_tilde_hid = out.view(-1, self.phi_dim, n_agents, self.phi_hidden).transpose(1, 2) # (bs, n, d_phi, phi_hid)
+        return phi_tilde_hid
 
 class FCNet(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_layer=1, hidden_dim=1024, use_leaky_relu=True, use_last_activ=False):
@@ -321,10 +360,9 @@ class FCNet(nn.Module):
         layers.append(nn.Linear(hidden_dim, out_dim))
         
         if use_last_activ:
-            layers.append(nn.Sigmoid())
+            layers.append(nn.Softmax(dim=-1))
             
         self.layers = nn.Sequential(*layers)
             
     def forward(self, x):
         return self.layers(x)
-    
