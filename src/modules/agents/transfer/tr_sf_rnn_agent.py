@@ -48,10 +48,10 @@ class TrSFRNNAgent(nn.Module):
         _, _, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
         h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
         h = self.rnn(attn_feature, h_in) # (bsn, hid)
-        task_weight_emb = self._task_enc(task_weight.repeat(h.shape[0], 1)) # (bsn, hid)
+        task_emb = self._task_enc(task_weight.repeat(h.shape[0], 1)) # (bsn, hid)
         
         ## forward psi
-        psi_hid = self.psi(th.cat([h, task_weight_emb], dim=-1)).view(-1, self.phi_dim, self.phi_hidden) # (bsn, d_phi, phi_hid)
+        psi_hid = self.psi(th.cat([h, task_emb], dim=-1)).view(-1, self.phi_dim, self.phi_hidden) # (bsn, d_phi, phi_hid)
         wo_action_layer_in = psi_hid
         wo_action_psi = self.wo_action_layer_psi(wo_action_layer_in) # (bsn, d_phi, n_wo_action)
 
@@ -83,10 +83,6 @@ class TrSFRNNAgent(nn.Module):
         phi_hid, _, _ = self._phi_enc(tau_a_inputs) # (bsn, d_phi, phi_hid)
         phi = self.phi_proj(phi_hid).squeeze(-1) # (bsn, d_phi)
         
-        # FIXME not needed
-        phi_hat_hid = self.phi_infer(th.cat([h, phi_hid.reshape(-1, self.phi_dim * self.phi_hidden)], dim=-1))
-        phi_hat = self.phi_proj(phi_hat_hid.reshape(-1, self.phi_dim, self.phi_hidden)).squeeze(-1)
-        
         phi_hid_input = phi_hid.detach().reshape(-1, n_agents, self.phi_dim, self.phi_hidden)
         phi_tilde_hid = self._group_self_attn(adv_mask, phi_hid_input, n_agents) # (bs, n, d_phi, phi_hid)
         phi_tilde = self.phi_proj(phi_tilde_hid.reshape(-1, self.phi_dim, self.phi_hidden)).squeeze(-1)
@@ -94,7 +90,7 @@ class TrSFRNNAgent(nn.Module):
         
         r_shaping = self.r_shaping(h).squeeze(-1) # (bsn,)
         
-        return h, psi, phi, phi_hat, phi_tilde, r_shaping
+        return h, psi, phi, phi_tilde, r_shaping
 
     def pretrain_forward(self, inputs, cur_action, hidden_state, task):
         attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
@@ -150,8 +146,8 @@ class TrSFRNNAgent(nn.Module):
         own_obs = th.cat([own_obs, agent_id_inputs, compact_action_states], dim=-1)
 
         # incorporate attack_action_info (n_enemies, bs*n_agents, 1) into enemy_feats
-        attack_action_info = attack_action_info.transpose(0, 1).unsqueeze(-1)
         if self.have_attack_action:
+            attack_action_info = attack_action_info.transpose(0, 1).unsqueeze(-1)
             enemy_feats = th.cat([th.stack(enemy_feats, dim=0), attack_action_info], dim=-1).transpose(0, 1) 
         else:
             enemy_feats = th.stack(enemy_feats, dim=0).transpose(0, 1)
@@ -268,18 +264,14 @@ class TrSFRNNAgent(nn.Module):
         self.rnn = nn.GRUCell(self.entity_embed_dim * self.args.head * 3, self.args.rnn_hidden_dim)
 
         self.wo_action_layer_psi = nn.Linear(self.phi_hidden, n_actions_no_attack)
-        self.wo_action_layer_phi = nn.Linear(self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden, n_actions_no_attack)
+        self.wo_action_layer_phi = FCNet(self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden, n_actions_no_attack)
         ## attack action networks
         self.attack_action_layer_psi = nn.Sequential(
             nn.Linear(self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden, self.args.rnn_hidden_dim),
             nn.ReLU(),
             nn.Linear(self.args.rnn_hidden_dim, 1)
         )
-        self.attack_action_layer_phi = nn.Sequential(
-            nn.Linear(2 * self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden , self.args.rnn_hidden_dim),
-            nn.ReLU(),
-            nn.Linear(self.args.rnn_hidden_dim, 1)
-        )
+        self.attack_action_layer_phi = FCNet(self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden, 1)
         self.enemy_embed = nn.Sequential(
             nn.Linear(obs_en_dim, self.args.rnn_hidden_dim),
             nn.ReLU(),
@@ -292,9 +284,7 @@ class TrSFRNNAgent(nn.Module):
 
         # include a shared local feature encoder-decoder, (local decoder is _build_policy); => \phi
         self.phi_enc = FCNet(self.hidden_dim + n_actions_no_attack + 1, 2 * self.phi_dim * self.phi_hidden) # traj_hid + no_attack_actions + 1(compact attack) -> mu, logstd (multi headed)
-        
-        self.phi_proj = nn.Linear(self.phi_dim, 1)
-        self.phi_infer = FCNet(self.hidden_dim + self.phi_dim * self.phi_hidden, self.phi_dim * self.phi_hidden) # local infer phi_tilde: \phi -> \hat \phi
+        self.phi_proj = nn.Linear(self.phi_hidden, 1)
         
         self.r_shaping = FCNet(self.hidden_dim, 1)
         self.task_enc = FCNet(self.phi_dim, self.hidden_dim) # z(w)

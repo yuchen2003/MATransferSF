@@ -4,6 +4,7 @@ import json
 import logging
 import numpy as np
 from tensorboardX.writer import SummaryWriter
+import wandb
 
 class Logger:
     def __init__(self, console_logger):
@@ -22,9 +23,7 @@ class Logger:
         self.writer = SummaryWriter(logdir=directory_name)
         self.use_tb = True
         
-    def setup_wandb(self, config, team_name, project_name, mode):
-        import wandb
-
+    def setup_wandb(self, config, team_name, project_name, mode, job_type=None):
         assert (
             team_name is not None and project_name is not None
         ), "W&B logging requires specification of both `wandb_team` and `wandb_project`."
@@ -51,16 +50,18 @@ class Logger:
 
         run_name = "+".join([config['run_file'], env_name, config['unique_token']])
         group_name = "_".join([alg_name, env_name, self.config_hash])
+        
+        self.wandb_configs = {}
+        self.wandb_configs['entity']=team_name
+        self.wandb_configs['project']=project_name
+        self.wandb_configs['config']=config
+        self.wandb_configs['name']=run_name
+        self.wandb_configs['group']=group_name
+        self.wandb_configs['job_type']=job_type
+        self.wandb_configs['mode']=mode
+        self.wandb_configs['notes']=config["wandb_note"]
 
-        self.wandb = wandb.init(
-            entity=team_name,
-            project=project_name,
-            config=config,
-            name=run_name,
-            group=group_name,
-            mode=mode,
-            notes=config["wandb_note"],
-        )
+        self.wandb = wandb.init(**self.wandb_configs)
 
         self.console_logger.info("*******************")
         self.console_logger.info("WANDB RUN ID:")
@@ -69,6 +70,16 @@ class Logger:
 
         # accumulate data at same timestep and only log in one batch once
         # all data has been gathered
+        self.wandb_current_t = -1
+        self.wandb_current_data = {}
+        
+    def reinit_wandb(self, job_type):
+        self.new_configs = {}
+        self.new_configs['group'] = self.wandb_configs['group']
+        self.new_configs['job_type'] = job_type
+        self.new_configs['name'] = self.wandb_configs['name']
+        self.new_configs['config'] = self.wandb_configs['config']
+        self.wandb = wandb.init(**self.new_configs)
         self.wandb_current_t = -1
         self.wandb_current_data = {}
 

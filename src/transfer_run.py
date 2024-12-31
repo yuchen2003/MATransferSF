@@ -53,7 +53,7 @@ def run(_run, _config, _log):
         
     if args.use_wandb:
         logger.setup_wandb(
-            _config, args.wandb_team, args.wandb_project, args.wandb_mode
+            _config, args.wandb_team, args.wandb_project, args.wandb_mode, job_type='pretrain'
         )
     
     # save executing code
@@ -172,10 +172,10 @@ def init_tasks(task_list, main_args, logger):
     
     return task2args, task2runner, task2buffer, task2scheme, task2groups, task2preprocess
 
-
 def run_sequential(args, logger):
     # In offline training, we use t_max to denote iterations
     # Init runner so we can get env info
+    assert args.ckpt_stage in [0, 1, 2]
     train_tasks = args.train_tasks
     trans_tasks = args.trans_tasks
     all_tasks = list(set(train_tasks + trans_tasks))
@@ -224,8 +224,8 @@ def run_sequential(args, logger):
         logger.console_logger.info("Loading model from {}".format(model_path))
         learner.load_models(model_path)
 
-        if main_args.evaluate or main_args.save_replay:
-            evaluate_sequential(main_args, logger, task2runner) # TODO may start learning at ckpt; evaluate is learning based on KB in transfer scene
+        if main_args.evaluate or main_args.save_replay or args.ckpt_stage == 3:
+            evaluate_sequential(main_args, logger, task2runner)
             return
     
     # =======================
@@ -245,48 +245,47 @@ def run_sequential(args, logger):
             shuffle=main_args.offline_data_shuffle,
         )
         
-    # === pretrain the encoder and decoder ===
-    pretrain_steps = args.pretrain_steps
-    logger.console_logger.info("Beginning pretraining encoder and decoder for {} steps.".format(pretrain_steps))
-    
-    pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=pretrain_steps)
-    
-    offline_train_steps = args.offline_train_steps
-    logger.console_logger.info("Beginning multi-task offline training for {} timesteps".format(offline_train_steps))
-    
-    train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=offline_train_steps)
-
-    # save the final model
-    if main_args.save_model:
-        save_path = os.path.join(main_args.save_dir, str(offline_train_steps))
-        os.makedirs(save_path, exist_ok=True)
-        logger.console_logger.info("Saving final models to {}".format(save_path))
-        learner.save_models(save_path, stage=1)
+    if args.ckpt_stage <= 0:
+        # === pretrain the encoder and decoder ===
+        pretrain_steps = args.pretrain_steps
+        logger.console_logger.info("Beginning pretraining encoder and decoder for {} steps.".format(pretrain_steps))
         
-    logger.console_logger.info(f"Finished Training, start online learning.")
+        pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=pretrain_steps)
+    
+    if args.ckpt_stage <= 1:
+        if args.use_wandb:
+            logger.reinit_wandb('offline')
+        offline_train_steps = args.offline_train_steps
+        logger.console_logger.info("Beginning multi-task offline training for {} timesteps".format(offline_train_steps))
+        
+        train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=offline_train_steps)
+            
+        logger.console_logger.info(f"Finished Training, start online learning.")
 
     # =======================
     #  Online Transfer Stage
     # =======================
-    logger.console_logger.info("Beginning preparing online buffers")
-    # mac.on() # FIXME reset policy each time for a new online task (single-task), or no reset (online multi-task transfer)
-    # prepare online data buffer
-    task2online_buffer = {}
-    for task in trans_tasks:
-        task2online_buffer[task] = ReplayBuffer(
-            scheme=task2scheme[task],
-            groups=task2groups[task],
-            buffer_size=args.buffer_size,
-            max_seq_length=task2args[task].episode_limit + 1,
-            preprocess=task2preprocess[task],
-            device="cpu" if args.buffer_cpu_only else args.device,
-        )
+    if args.ckpt_stage <= 2: # always
+        if args.use_wandb:
+            logger.reinit_wandb('online')
+        logger.console_logger.info("Beginning preparing online buffers")
+        # prepare online data buffer
+        task2online_buffer = {}
+        for task in trans_tasks:
+            task2online_buffer[task] = ReplayBuffer(
+                scheme=task2scheme[task],
+                groups=task2groups[task],
+                buffer_size=args.buffer_size,
+                max_seq_length=task2args[task].episode_limit + 1,
+                preprocess=task2preprocess[task],
+                device="cpu" if args.buffer_cpu_only else args.device,
+            )
 
-    online_train_steps = args.online_train_steps
-    logger.console_logger.info("Beginning online training for {} timesteps".format(online_train_steps))
-    trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=online_train_steps, is_single_task_online=args.is_single_task_online)
-    
-    logger.console_logger.info(f"Finished online learning.")
+        online_train_steps = args.online_train_steps
+        logger.console_logger.info("Beginning online training for {} timesteps".format(online_train_steps))
+        trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=online_train_steps, is_single_task_online=args.is_single_task_online)
+        
+        logger.console_logger.info(f"Finished online learning.")
     
     for task in all_tasks:
         task2runner[task].close_env()
@@ -329,11 +328,19 @@ def pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task
             last_test_T = t_env
         
         if main_args.save_model and (t_env - model_save_time >= main_args.save_model_interval or model_save_time == 0):
-            save_path = os.path.join(main_args.save_dir, str(t_env), 'pretrain')
+            save_path = os.path.join(main_args.save_dir, 'pretrain', str(t_env))
             os.makedirs(save_path, exist_ok=True)
             logger.console_logger.info("Saving models to {}".format(save_path))
-            learner.save_models(save_path, stage=0)
+            learner.save_models(save_path)
             model_save_time = t_env
+            
+    # save the final model
+    if main_args.save_model:
+        save_path = os.path.join(main_args.save_dir, 'pretrain', str(t_max))
+        os.makedirs(save_path, exist_ok=True)
+        logger.console_logger.info("Saving final models to {}".format(save_path))
+        learner.save_models(save_path)
+            
         
 def train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=50000):
     '''
@@ -370,18 +377,18 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
                 episode_sample.to(main_args.device)
             
             learner.train(episode_sample, t_env, episode, task)
-            print(t_env)
+            # print(t_env)
             t_env += 1
             episode += batch_size_run
 
         if (t_env - last_test_T) / main_args.test_interval >= 1 or t_env >= t_max:
             test_start_time = time.time()
             
-            # with th.no_grad():
-            #     for task in main_args.all_tasks:
-            #         task2runner[task].t_env = t_env
-            #         for _ in range(n_test_runs):
-            #             task2runner[task].run(test_mode=True)
+            with th.no_grad():
+                for task in main_args.all_tasks:
+                    task2runner[task].t_env = t_env
+                    for _ in range(n_test_runs):
+                        task2runner[task].run(test_mode=True)
 
             test_time_total += time.time() - test_start_time
             
@@ -393,16 +400,23 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             last_test_T = t_env
         
         if main_args.save_model and (t_env - model_save_time >= main_args.save_model_interval or model_save_time == 0):
-            save_path = os.path.join(main_args.save_dir, str(t_env))
+            save_path = os.path.join(main_args.save_dir, 'offline', str(t_env))
             os.makedirs(save_path, exist_ok=True)
             logger.console_logger.info("Saving models to {}".format(save_path))
-            learner.save_models(save_path, stage=1)
+            learner.save_models(save_path)
             model_save_time = t_env
         
         if (t_env - last_log_T) >= main_args.log_interval:
             last_log_T = t_env
             logger.log_stat("episode", episode, t_env)
             logger.print_recent_stats()
+            
+    # save the final model
+    if main_args.save_model:
+        save_path = os.path.join(main_args.save_dir, 'offline', str(t_max))
+        os.makedirs(save_path, exist_ok=True)
+        logger.console_logger.info("Saving final models to {}".format(save_path))
+        learner.save_models(save_path)
 
 
 def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=200000, is_single_task_online=True):
@@ -422,14 +436,14 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
     batch_size_test = main_args.offline_batch_size
     batch_size_run = main_args.batch_size_run # num of parellel envs
     n_test_runs = max(1, main_args.test_nepisode//batch_size_run)
-    test_start_time = time.time()
-
-    with th.no_grad():
-        for task in trans_tasks:
-            task2runner[task].t_env = 0
-            for _ in range(n_test_runs):
-                task2runner[task].run(test_mode=True)
-    test_time_total += time.time() - test_start_time
+    
+    # test_start_time = time.time()
+    # with th.no_grad():
+    #     for task in trans_tasks:
+    #         task2runner[task].t_env = 0
+    #         for _ in range(n_test_runs):
+    #             task2runner[task].run(test_mode=True)
+    # test_time_total += time.time() - test_start_time
 
     for task in trans_tasks:
         args, runner, buffer = task2args[task], task2runner[task], task2online_buffer[task]
@@ -449,6 +463,7 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
                         
                     learner.train(episode_sample, t_env, episode, task, is_online=True)
                     t_env += 1
+                    # print(t_env)
                     
             if (t_env - last_test_T) / main_args.test_interval >= 1 or t_env >= t_max:
                 test_start_time = time.time()
@@ -468,10 +483,10 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
                 last_test_T = t_env
             
             if main_args.save_model and (t_env - model_save_time >= main_args.save_model_interval or model_save_time == 0):
-                save_path = os.path.join(main_args.save_dir, str(t_env), "tr")
+                save_path = os.path.join(main_args.save_dir, "online", str(t_env))
                 os.makedirs(save_path, exist_ok=True)
                 logger.console_logger.info("Saving models to {}".format(save_path))
-                learner.save_models(save_path, stage=2)
+                learner.save_models(save_path)
                 model_save_time = t_env + 1
             
             episode += batch_size_run
@@ -479,6 +494,13 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
                 last_log_T = t_env
                 logger.log_stat("episode", episode, t_env)
                 logger.print_recent_stats()
+                
+        # save the final model
+        if main_args.save_model:
+            save_path = os.path.join(main_args.save_dir, task, 'online', str(t_max))
+            os.makedirs(save_path, exist_ok=True)
+            logger.console_logger.info("Saving final models to {}".format(save_path))
+            learner.save_models(save_path)
 
 
 def args_sanity_check(config, _log):
