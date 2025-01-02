@@ -158,7 +158,7 @@ class MTRNNAgent(nn.Module):
             case "gymma":
                 obs_own_dim, obs_en_dim, obs_al_dim = surrogate_decomposer.own_obs_dim, surrogate_decomposer.obs_nf_en, surrogate_decomposer.obs_nf_al
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-                wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack # see gymma_offline.yaml
+                wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack + 1
                 ## enemy_obs ought to add attack_action_infos
                 obs_en_dim += surrogate_decomposer.n_actions_attack
             case _:
@@ -185,7 +185,6 @@ class MTRNNAgent(nn.Module):
             case _:
                 raise NotImplementedError
         
-
         self.rnn = nn.GRUCell(self.entity_embed_dim * self.args.head * 3, self.args.rnn_hidden_dim)
         
         self.wo_action_layer = nn.Linear(self.args.rnn_hidden_dim, n_actions_no_attack)

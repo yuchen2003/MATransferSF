@@ -64,6 +64,7 @@ class MTMADDPGMAC:
         env2decomposer = {
             "sc2": "sc2_decomposer",
         }
+        # TODO add gymma case
         self.task2decomposer = {}
         self.surrogate_decomposer = None
         aligned_unit_type_bits, aligned_shield_bits_ally, aligned_shield_bits_enemy = 0, 0, 0

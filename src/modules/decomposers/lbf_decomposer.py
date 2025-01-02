@@ -82,7 +82,7 @@ class GymDecomposer:
 
     def decompose_action_info(self, action_info):
         """
-        action_info: shape [n_agent, n_action]
+        action_info: shape [(bs), n_agent, n_action]
         """
         shape = action_info.shape
         bsn = np.prod(shape[:-1]) # bs x n_agent
@@ -90,10 +90,16 @@ class GymDecomposer:
             action_info = action_info.reshape(bsn, shape[-1])
         no_attack_action_info = action_info[:, :self.n_actions_no_attack]  
         attack_action_info = action_info[:, self.n_actions_no_attack:]
+        bin_attack_info = no_attack_action_info[:, -1:]
+        
+        # recover shape: (bs, n, *)
+        no_attack_action_info = no_attack_action_info.reshape(*shape[:-1], self.n_actions_no_attack)    
         attack_action_info = attack_action_info.reshape(*shape[:-1], -1)
+        bin_attack_info = bin_attack_info.reshape(*shape[:-1], 1)
+        
         # get compact action
-        bin_attack_info = th.sum(no_attack_action_info[:, -1:], dim=-1).unsqueeze(-1)
         compact_action_info = th.cat([no_attack_action_info, bin_attack_info], dim=-1) # NOTE picking-up food is regarded as agent' own action, not scalable wrt n_enemies, however also regarded as attack action as in compact_action
+        
         return no_attack_action_info, attack_action_info, compact_action_info
 
 def lbf_nearby(agent, food):

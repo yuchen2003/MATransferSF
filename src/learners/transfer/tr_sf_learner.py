@@ -32,7 +32,7 @@ class TransferSFLearner:
         self.phi_dim = main_args.phi_dim
         
         # loss weights
-        self.lambda_recon = 0.1
+        self.lambda_recon = 0.1 # lbf
         self.lambda_r = 1
         self.lambda_l1 = 1 # not sensitive
         self.vae_beta = 1
@@ -91,7 +91,7 @@ class TransferSFLearner:
         Clone a weight from mac.task.weights, optimize it, and upload it to mac. After call this function, a task weight is instantiated as optimized current task weight.
         '''
         weight = self.mac.task2weights[task].detach().clone().requires_grad_()
-        self.optim_w = SGD([weight], lr=self.lr_w)
+        self.optim_w = Adam([weight], lr=self.lr_w)
         for ep_w in range(self.num_ep_w):
             w_repeat = weight.unsqueeze(1).repeat(bs, n_agents, 1) # (1, d_phi) -> (bs, n, d_phi)
             w_repeat = w_repeat.view(-1, self.phi_dim).unsqueeze(1).repeat(1, T_1, 1) # (bsn, T-1, d_phi)
@@ -105,11 +105,6 @@ class TransferSFLearner:
             w_loss.backward()
             self.optim_w.step()
             
-            # if (ep_w+1) % 20 == 0:
-            #     print(w_loss.item())
-            
-        if th.abs(weight[0, 0]).item() > 1000:
-            print('oops')
         self.mac.task2weights[task] = weight.detach().clone()
         return weight.detach()
     
@@ -163,7 +158,7 @@ class TransferSFLearner:
         self.pretrain_optimiser.zero_grad()
         loss.backward()
         self.pretrain_optimiser.step()
-        # print("step: {}, loss: {:.6f}, recon: {:.6f}, phi: {:.6f}, KLD: {:.6f}".format(t_env, loss.item(), recon_loss.item(), phi_loss.item(), KLD.item()))
+
         if t_env - self.pretrain_last_log_t >= self.task2args[task].learner_log_interval:
             self.logger.log_stat(f"pretrain/loss", loss.item(), t_env)
             self.logger.log_stat(f"pretrain/recon_loss", recon_loss.item(), t_env)

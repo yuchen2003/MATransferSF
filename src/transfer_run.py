@@ -27,6 +27,7 @@ import numpy as np
 
 import cProfile, pstats, io
 DO_PROFILE = False
+gt_env = 0
 
 def run(_run, _config, _log):
 
@@ -52,8 +53,9 @@ def run(_run, _config, _log):
         logger.setup_tb(tb_exp_direc)
         
     if args.use_wandb:
+        stage2job = {0: "pretrain", 1: "offline", 2: "online", 3: "eval"}
         logger.setup_wandb(
-            _config, args.wandb_team, args.wandb_project, args.wandb_mode, job_type='pretrain'
+            _config, args.wandb_team, args.wandb_project, args.wandb_mode, job_type=stage2job[args.ckpt_stage]
         )
     
     # save executing code
@@ -175,7 +177,7 @@ def init_tasks(task_list, main_args, logger):
 def run_sequential(args, logger):
     # In offline training, we use t_max to denote iterations
     # Init runner so we can get env info
-    assert args.ckpt_stage in [0, 1, 2]
+    assert args.ckpt_stage in [0, 1, 2, 3]
     train_tasks = args.train_tasks
     trans_tasks = args.trans_tasks
     all_tasks = list(set(train_tasks + trans_tasks))
@@ -183,12 +185,15 @@ def run_sequential(args, logger):
     args.n_tasks = len(all_tasks)
     # args.on_n_tasks = 1 # Assume online learning on only one task at a time
     main_args = copy.deepcopy(args)
+    # main_args.pretrain_batch_size = 256 if main_args.env == 'gymma' else 64
+    main_args.pretrain_batch_size = 64
 
     task2args, task2runner, task2buffer, task2scheme, task2groups, task2preprocess = init_tasks(all_tasks, main_args, logger)
     task2buffer_scheme = { task: task2buffer[task].scheme for task in all_tasks }
 
     # single mac, single learner and multiple task runner & config
     mac = mac_REGISTRY[main_args.mac](all_tasks, train_tasks, trans_tasks, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
+    # mac = mac_REGISTRY[main_args.mac](all_tasks, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
 
     learner = le_REGISTRY[main_args.learner](mac, logger, main_args)
     if main_args.use_cuda:
@@ -231,21 +236,22 @@ def run_sequential(args, logger):
     # =======================
     #   Offline Train Stage
     # =======================
-    logger.console_logger.info("Beginning preparing offline datasets")
-    # prepare offline data
-    task2offline_buffer = {}
+    if args.ckpt_stage <= 1:
+        logger.console_logger.info("Beginning preparing offline datasets")
+        # prepare offline data
+        task2offline_buffer = {}
 
-    for task in train_tasks:
-        task2offline_buffer[task] = OfflineBuffer(
-            args=main_args,
-            map_name=task,
-            quality=main_args.train_tasks_data_quality[task],
-            data_path=main_args.tasks_offline_bottom_data_paths[task],
-            max_buffer_size=main_args.offline_max_buffer_size,
-            shuffle=main_args.offline_data_shuffle,
-        )
+        for task in train_tasks:
+            task2offline_buffer[task] = OfflineBuffer(
+                args=main_args,
+                map_name=task,
+                quality=main_args.train_tasks_data_quality[task],
+                data_path=main_args.tasks_offline_bottom_data_paths[task],
+                max_buffer_size=main_args.offline_max_buffer_size,
+                shuffle=main_args.offline_data_shuffle,
+            )
         
-    if args.ckpt_stage <= 0:
+    if args.ckpt_stage == 0:
         # === pretrain the encoder and decoder ===
         pretrain_steps = args.pretrain_steps
         logger.console_logger.info("Beginning pretraining encoder and decoder for {} steps.".format(pretrain_steps))
@@ -253,8 +259,6 @@ def run_sequential(args, logger):
         pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=pretrain_steps)
     
     if args.ckpt_stage <= 1:
-        if args.use_wandb:
-            logger.reinit_wandb('offline')
         offline_train_steps = args.offline_train_steps
         logger.console_logger.info("Beginning multi-task offline training for {} timesteps".format(offline_train_steps))
         
@@ -266,8 +270,6 @@ def run_sequential(args, logger):
     #  Online Transfer Stage
     # =======================
     if args.ckpt_stage <= 2: # always
-        if args.use_wandb:
-            logger.reinit_wandb('online')
         logger.console_logger.info("Beginning preparing online buffers")
         # prepare online data buffer
         task2online_buffer = {}
@@ -283,7 +285,7 @@ def run_sequential(args, logger):
 
         online_train_steps = args.online_train_steps
         logger.console_logger.info("Beginning online training for {} timesteps".format(online_train_steps))
-        trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=online_train_steps, is_single_task_online=args.is_single_task_online)
+        trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=online_train_steps)
         
         logger.console_logger.info(f"Finished online learning.")
     
@@ -294,12 +296,13 @@ def pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task
     '''
     For offline pretraining phi enc-dec
     '''
-    t_env = 0
+    global gt_env
+    t_env = gt_env
     episode = 0
-    t_max = train_steps
-    model_save_time = 0
-    last_test_T = 0
-    last_log_T = 0
+    t_max = train_steps + gt_env
+    model_save_time = t_env
+    last_test_T = t_env
+    last_log_T = t_env
     start_time = time.time()
     last_time = start_time
     test_time_total = 0
@@ -340,18 +343,22 @@ def pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task
         os.makedirs(save_path, exist_ok=True)
         logger.console_logger.info("Saving final models to {}".format(save_path))
         learner.save_models(save_path)
+        
+    gt_env = t_env
             
         
 def train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=50000):
     '''
     For offline learning based on multitask datasets
     '''
-    t_env = 0
+    global gt_env
+    t_env = gt_env
     episode = 0
-    t_max = train_steps
-    model_save_time = 0
-    last_test_T = 0
-    last_log_T = 0
+    t_max = train_steps + gt_env
+    model_save_time = t_env
+    last_test_T = t_env
+    last_log_T = t_env
+    
     start_time = time.time()
     last_time = start_time
     test_time_total = 0
@@ -417,21 +424,27 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
         os.makedirs(save_path, exist_ok=True)
         logger.console_logger.info("Saving final models to {}".format(save_path))
         learner.save_models(save_path)
+        
+    gt_env = t_env
 
 
-def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=200000, is_single_task_online=True):
+def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=200000):
     '''
     For online transfer learning on multiple tasks "individually" #TODO online multitask
     '''
-    t_env = 0
+    global gt_env
+    t_env = gt_env
     episode = 0
-    t_max = train_steps
-    model_save_time = 0
-    last_test_T = 0
-    last_log_T = 0
+    t_max = train_steps + gt_env
+    model_save_time = t_env
+    last_test_T = t_env
+    last_log_T = t_env
     start_time = time.time()
     last_time = start_time
     test_time_total = 0
+    diff_off_on = False
+    if main_args.name in ['tr_sf']:
+        diff_off_on = True
 
     batch_size_test = main_args.offline_batch_size
     batch_size_run = main_args.batch_size_run # num of parellel envs
@@ -445,7 +458,7 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
     #             task2runner[task].run(test_mode=True)
     # test_time_total += time.time() - test_start_time
 
-    for task in trans_tasks:
+    for task in trans_tasks: # NOTE or 'for task' in the inner loop for multitask online learning
         args, runner, buffer = task2args[task], task2runner[task], task2online_buffer[task]
         while t_env < t_max:
             with th.no_grad():
@@ -461,9 +474,11 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
                     if episode_sample.device != args.device:
                         episode_sample.to(args.device)
                         
-                    learner.train(episode_sample, t_env, episode, task, is_online=True)
+                    if diff_off_on:
+                        learner.train(episode_sample, t_env, episode, task, is_online=True)
+                    else:
+                        learner.train(episode_sample, t_env, episode, task)
                     t_env += 1
-                    # print(t_env)
                     
             if (t_env - last_test_T) / main_args.test_interval >= 1 or t_env >= t_max:
                 test_start_time = time.time()
@@ -497,11 +512,12 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
                 
         # save the final model
         if main_args.save_model:
-            save_path = os.path.join(main_args.save_dir, task, 'online', str(t_max))
+            save_path = os.path.join(main_args.save_dir, 'online', task, str(t_max))
             os.makedirs(save_path, exist_ok=True)
             logger.console_logger.info("Saving final models to {}".format(save_path))
             learner.save_models(save_path)
-
+            
+    gt_env = t_env
 
 def args_sanity_check(config, _log):
 

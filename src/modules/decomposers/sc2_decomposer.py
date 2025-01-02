@@ -322,6 +322,7 @@ class SC2Decomposer:
         # recover shape
         no_attack_action_info = no_attack_action_info.reshape(*shape[:-1], self.n_actions_no_attack)    
         attack_action_info = attack_action_info.reshape(*shape[:-1], self.n_enemies)
+        
         # get compact action
         bin_attack_info = th.sum(attack_action_info, dim=-1).unsqueeze(-1)
         compact_action_info = th.cat([no_attack_action_info, bin_attack_info], dim=-1)

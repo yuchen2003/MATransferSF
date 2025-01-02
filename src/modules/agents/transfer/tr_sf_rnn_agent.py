@@ -41,11 +41,45 @@ class TrSFRNNAgent(nn.Module):
     def init_hidden(self):
         # make hidden states on the same device as model
         return self.wo_action_layer_psi.weight.new(1, self.args.rnn_hidden_dim).zero_()
+    
+    def pretrain_forward(self, inputs, cur_action, hidden_state, task):
+        bsn = inputs.shape[0]
+        attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
+        _, _, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
+        cur_compact_action = cur_compact_action.reshape(-1, cur_compact_action.shape[-1])
+        h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
+        h = self.rnn(attn_feature, h_in)
+        tau_a_inputs = th.cat([h, cur_compact_action], dim=-1)
+
+        r_shaping = self.r_shaping(h).squeeze(-1) # (bsn,)
+        phi_hid, mu, logvar = self._phi_enc(tau_a_inputs) # (bsn, d_phi, phi_hid)
+        
+        ## decoder />
+        wo_action_layer_in = th.cat([h, phi_hid.reshape(-1, self.phi_dim * self.phi_hidden)], dim=-1) # FIXME duplicated h
+        wo_action_a = self.wo_action_layer_phi(wo_action_layer_in)
+        
+        enemy_feature = self.enemy_embed(enemy_feats) # (bsn, n_enemy, hid)
+        
+        if self.have_attack_action:
+            phi_feature = phi_hid.reshape(bsn, -1).unsqueeze(1).repeat(1, enemy_feats.size(1), 1)
+            attack_action_input = th.cat([enemy_feature, phi_feature], dim=-1)
+            attack_action_a = self.attack_action_layer_phi(attack_action_input).squeeze(-1) # (bsn, n_enemy)
+            action_recon = th.cat([wo_action_a, attack_action_a], dim=-1)
+        else:
+            action_recon = wo_action_a
+        ## </decoder
+        
+        phi_hid = phi_hid.view(-1, self.phi_dim, self.phi_hidden)
+        phi = self.phi_proj(phi_hid).squeeze(-1) # (bsn, d_phi)
+
+        return h, phi, mu, logvar, r_shaping, action_recon
 
     def forward(self, inputs, cur_action, hidden_state, task, task_weight): # psi forward
+        bsn = inputs.shape[0]
         n_agents = self.task2n_agents[task]
         attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
         _, _, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
+        cur_compact_action = cur_compact_action.reshape(-1, cur_compact_action.shape[-1])
         h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
         h = self.rnn(attn_feature, h_in) # (bsn, hid)
         task_emb = self._task_enc(task_weight.repeat(h.shape[0], 1)) # (bsn, hid)
@@ -91,35 +125,6 @@ class TrSFRNNAgent(nn.Module):
         r_shaping = self.r_shaping(h).squeeze(-1) # (bsn,)
         
         return h, psi, phi, phi_tilde, r_shaping
-
-    def pretrain_forward(self, inputs, cur_action, hidden_state, task):
-        attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
-        _, _, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
-        h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
-        h = self.rnn(attn_feature, h_in)
-        tau_a_inputs = th.cat([h, cur_compact_action], dim=-1)
-
-        r_shaping = self.r_shaping(h).squeeze(-1) # (bsn,)
-        phi_hid, mu, logvar = self._phi_enc(tau_a_inputs) # (bsn, d_phi * phi_hid)
-        
-        ## decoder />
-        wo_action_layer_in = th.cat([h, phi_hid.reshape(-1, self.phi_dim * self.phi_hidden)], dim=-1)
-        wo_action_a = self.wo_action_layer_phi(wo_action_layer_in)
-        
-        enemy_feature = self.enemy_embed(enemy_feats) # (bsn, n_enemy, hid)
-        
-        if self.have_attack_action:
-            attack_action_input = th.cat([enemy_feature, phi_hid.unsqueeze(1).repeat(1, enemy_feats.size(1), 1)], dim=-1)
-            attack_action_a = self.attack_action_layer_phi(attack_action_input).squeeze(-1) # (bsn, n_enemy)
-            action_recon = th.cat([wo_action_a, attack_action_a], dim=-1)
-        else:
-            action_recon = wo_action_a
-        ## </decoder
-        
-        phi_hid = phi_hid.view(-1, self.phi_dim, self.phi_hidden)
-        phi = self.phi_proj(phi_hid).squeeze(-1) # (bsn, d_phi)
-
-        return h, phi, mu, logvar, r_shaping, action_recon
 
     def _get_attn_feature(self, inputs, task):
         task_decomposer = self.task2decomposer[task]
@@ -267,7 +272,7 @@ class TrSFRNNAgent(nn.Module):
         self.wo_action_layer_phi = FCNet(self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden, n_actions_no_attack)
         ## attack action networks
         self.attack_action_layer_psi = nn.Sequential(
-            nn.Linear(self.args.rnn_hidden_dim + self.phi_dim * self.phi_hidden, self.args.rnn_hidden_dim),
+            nn.Linear(self.args.rnn_hidden_dim + self.phi_hidden, self.args.rnn_hidden_dim),
             nn.ReLU(),
             nn.Linear(self.args.rnn_hidden_dim, 1)
         )

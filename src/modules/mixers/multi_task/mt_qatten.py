@@ -13,7 +13,7 @@ class MTQMixer(nn.Module):
         state_nf_al, state_nf_en, timestep_state_dim = \
             surrogate_decomposer.aligned_state_nf_al, surrogate_decomposer.aligned_state_nf_en, surrogate_decomposer.timestep_number_state_dim
         # timestep_state_dim = 0/1 denote whether encode the "t" of s
-
+        # TODO add gymma case
         # get detailed state shape information
         self.state_last_action, self.state_timestep_number = surrogate_decomposer.state_last_action, surrogate_decomposer.state_timestep_number
         

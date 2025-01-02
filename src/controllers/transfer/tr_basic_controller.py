@@ -70,7 +70,7 @@ class TrBasicMAC:
         self.task2weights = {}        
         self.phi_dim = self.agent.phi_dim
         for task in self.all_tasks: # NOTE init for all tasks; when eval on trained task, w is reused; when eval on new task, w here is to be learned
-            self.task2weights.update({task: th.randn(1, self.phi_dim, requires_grad=True, device=th.device(self.main_args.device))})
+            self.task2weights.update({task: th.randn(1, self.phi_dim, requires_grad=True, device=th.device(self.main_args.device))}) # TODO modify this to enable flexible trans_tasks (need no input of train_task and trans_task by adding a train record)
         
         self.hidden_states = None
 

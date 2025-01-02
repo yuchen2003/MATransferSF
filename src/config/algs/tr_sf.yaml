@@ -25,31 +25,32 @@ mixing_embed_dim: 32
 hypernet_layers: 1
 hypernet_embed: 64
 
-pretrain_steps: 10000
-pretrain_batch_size: 256
-offline_train_steps: 40000
-online_train_steps: 20000 # for online train
+pretrain_steps: 100000
+offline_train_steps: 100000
+online_train_steps: 100000 # for online train
 
-# pretrain_steps: 205
-# pretrain_batch_size: 256
-# offline_train_steps: 205
-# online_train_steps: 205 # for online train
+# pretrain_steps: 100
+# offline_train_steps: 100
+# online_train_steps: 100 # for online train
 
-# 0: not trained, save pretraining model and not load; 
+# 0: not trained, save pretraining model and not load or load from pretraining model; 
 ckpt_stage: 0
+# checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2024-12-31_15-21-34/models/pretrain" # 8 phi x 8 dim
 
-# 1: pretrained, save offline model and load pretrain model
+# 1: pretrained, save offline model and load pretrain model or load offline training model;
 # ckpt_stage: 1
-# checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2024-12-30_21-34-40/models" # 8 phi x 8 dim
+
+# checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2024-12-31_16-04-26/models/pretrain" # 8 phi x 8 dim
+# load_step: 100000
 # checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2024-12-31_11-46-03/models/pretrain" # 1 phi x 64 dim
 # load_step: 10000
 
-# 2: pretrain + offline train, only do online learning, save online model, load pretrained offline model
+# 2: pretrain + offline train, only do online learning, save online model, load pretrained offline model or load online training model;
 # ckpt_stage: 2
 # checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2024-12-30_21-34-40/models/offline"
 # load_step: 10000
 
-# 3: online trained, do evaluation; use main_args.evaluate instead
+# 3: online trained, do evaluation, can load online trained model; use main_args.evaluate instead
 
 # </ learner
 
