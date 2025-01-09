@@ -17,6 +17,7 @@ class TrBasicMAC:
 
         self.agent_output_type = main_args.agent_output_type
         self.action_selector = action_REGISTRY[main_args.action_selector](main_args)
+        self.use_gpi = main_args.use_gpi
 
         if self.main_args.env not in ["sc2", "gymma"]:
             raise NotImplementedError
@@ -70,25 +71,29 @@ class TrBasicMAC:
         self.task2weights = {}        
         self.phi_dim = self.agent.phi_dim
         for task in self.all_tasks: # NOTE init for all tasks; when eval on trained task, w is reused; when eval on new task, w here is to be learned
-            self.task2weights.update({task: th.randn(1, self.phi_dim, requires_grad=True, device=th.device(self.main_args.device))}) # TODO modify this to enable flexible trans_tasks (need no input of train_task and trans_task by adding a train record)
+            self.task2weights.update({task: th.ones(self.phi_dim, device=th.device(self.main_args.device))}) # TODO modify this to enable flexible trans_tasks (need no input of train_task and trans_task by adding a train record)
         
         self.hidden_states = None
 
     def select_actions(self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False): # for execution
         avail_actions = ep_batch["avail_actions"][:, t_ep]
-        # GPI policy: 
-        # 1. max psi(batch; train_task) * w(cur_ask) over train_task, not calc psi for current task
         agent_outputs = []
         cur_w = self.task2weights[task]
-        for train_task in self.train_tasks:
-            train_w = self.task2weights[train_task]
-            psi = self.forward(ep_batch, t_ep, task, train_w, test_mode=test_mode)[0] # psi: (bs, n, d_phi, n_act)
-            psi = psi.transpose(-1, -2) # (bs, n, n_act, d_phi)
-            q_vals = (psi * cur_w).sum(-1)
-            agent_outputs.append(q_vals)
-        agent_outputs = th.stack(agent_outputs, dim=-1) # (bs, n, n_act, n_train_task)
-        agent_outputs = agent_outputs.max(dim=-1).values
-        # TODO or 2. utilize decoder
+        if self.use_gpi:
+            # 1. GPI policy: max psi(batch; train_task) * w(cur_task) over train_task, not calc psi for current task
+            for train_task in self.train_tasks:
+                train_w = self.task2weights[train_task]
+                psi = self.forward(ep_batch, t_ep, task, train_w, test_mode=test_mode) # psi: (bs, n, d_phi, n_act)
+                psi = psi.transpose(-1, -2) # (bs, n, n_act, d_phi)
+                q_vals = (psi * cur_w).sum(-1)
+                agent_outputs.append(q_vals)
+            agent_outputs = th.stack(agent_outputs, dim=-1) # (bs, n, n_act, n_train_task) # FIXME?
+            agent_outputs = agent_outputs.max(dim=-1).values
+        else:
+        # or 2. treat psi(batch; cur_task) * w(cur_task) as a value func
+            psi = self.forward(ep_batch, t_ep, task, cur_w, test_mode=test_mode)
+            psi = psi.transpose(-1, -2)
+            agent_outputs = (psi * cur_w).sum(-1)
 
         chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode)
         return chosen_actions
@@ -97,16 +102,15 @@ class TrBasicMAC:
         # NOTE online forward: train the same psi network for unseen task weights
         agent_inputs = self._build_inputs(ep_batch, t, task)
         avail_actions = ep_batch["avail_actions"][:, t] # (bs, n_agents, n_act)
-        avail_actions = avail_actions.unsqueeze(2).expand(-1, -1, self.phi_dim, -1)
+        avail_actions = avail_actions.unsqueeze(2).repeat(1, 1, self.phi_dim, 1)
         cur_actions = ep_batch["actions_onehot"][:, t]
         bs = ep_batch.batch_size
         n_agents = self.task2n_agents[task]
         if task_weight is None:
             task_weight = self.task2weights[task] # (1, d_phi)
 
-        #bs = agent_inputs.shape[0]//self.task2n_agents[task]
-        self.hidden_states, psi, phi, phi_tilde, r_shaping = self.agent(agent_inputs, cur_actions, self.hidden_states, task, task_weight)
-        # psi: (bs, n, d_phi, n_act)
+        self.hidden_states, psi = self.agent(agent_inputs, cur_actions, self.hidden_states, task, task_weight)
+        # psi: (bs, n, d_phi, n_act); phi: (bs, n, d_phi)
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":
@@ -130,18 +134,17 @@ class TrBasicMAC:
                     # Zero out the unavailable actions, which have been softmax.
                     psi[avail_actions == 0] = 0.0
         
-        return psi, phi, phi_tilde, r_shaping
+        return psi
     
     def pretrain_forward(self, ep_batch, t, task):
         agent_inputs = self._build_inputs(ep_batch, t, task)
         cur_actions = ep_batch["actions_onehot"][:, t]
         
-        self.hidden_states, phi_out, mu, logvar, r_shaping, action_recon = self.agent.pretrain_forward(agent_inputs, cur_actions, self.hidden_states, task)
+        self.hidden_states, phi_out, mu, logvar, action_recon = self.agent.pretrain_forward(agent_inputs, cur_actions, self.hidden_states, task)
         
-        if self.agent_output_type == "pi_logits":
-            action_recon = F.softmax(action_recon, dim=-1)
+        action_recon = F.softmax(action_recon, dim=-1)
         
-        return phi_out, mu, logvar, r_shaping, action_recon
+        return phi_out, mu, logvar, action_recon
     
     def init_hidden(self, batch_size, task):
         self.hidden_states = self.agent.init_hidden().expand(batch_size * self.task2n_agents[task], -1)

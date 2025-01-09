@@ -67,7 +67,7 @@ class MTQMixer(nn.Module):
                                nn.ReLU(),
                                nn.Linear(self.embed_dim, 1))
     
-    def forward(self, agent_qs, states, task_decomposer):
+    def forward(self, agent_qs, states, task_decomposer, r_mode=False):
         # agent_qs: [batch_size, seq_len, n_agents]
         # states: [batch_size, seq_len, state_dim]
         bs, seq_len, n_agents = agent_qs.size()

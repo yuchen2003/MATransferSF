@@ -8,7 +8,7 @@ from torch.optim import RMSprop, Adam
 from components.standarize_stream import RunningMeanStd
 import torch.nn.functional as F
 
-class MTQLearner:
+class TransferQLearner:
     def __init__(self, mac, logger, main_args) -> None:
         self.main_args = main_args
         self.mac = mac
@@ -141,6 +141,7 @@ class MTQLearner:
         td_loss = (masked_td_error ** 2).sum() / mask.sum()
         
         loss = td_loss
+
 
         if "cql" in self.main_args.name:
             match self.main_args.cql_type:

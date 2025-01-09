@@ -34,7 +34,7 @@ for t in tasks:
         cmds.append(cmd_tpl.format(time, dev_id % 2, alg, t))
         time += 3
         dev_id += 1
-    
+
 def run_cmd(cmd):
     ret = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return ret.returncode
@@ -48,9 +48,9 @@ if __name__ == '__main__':
     
     
     ret = None
-    if argv[-1] != 'tc': # testcmd
-        with Pool(processes=len(cmds)) as pool:
-            ret = pool.map(run_cmd, cmds)
+    # if argv[-1] != 'tc': # testcmd
+    #     with Pool(processes=len(cmds)) as pool:
+    #         ret = pool.map(run_cmd, cmds)
         
     print('Programs done with return codes: ', ret)
     

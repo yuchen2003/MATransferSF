@@ -54,16 +54,40 @@ class Logger:
             run_name = "+".join([config['run_file'], env_name, config['unique_token']])
         group_name = "_".join([alg_name, env_name, self.config_hash])
         
-        self.wandb = wandb.init(
-            entity=team_name,
-            project=project_name,
-            config=config,
-            name=run_name,
-            group=group_name,
-            job_type=job_type,
-            mode=mode,
-            notes=config["wandb_note"],
-        )
+        if mode == 'online':
+            try:
+                self.wandb = wandb.init(
+                    entity=team_name,
+                    project=project_name,
+                    config=config,
+                    name=run_name,
+                    group=group_name,
+                    job_type=job_type,
+                    mode="online",
+                    notes=config["wandb_note"],
+                )
+            except:
+                self.wandb = wandb.init(
+                    entity=team_name,
+                    project=project_name,
+                    config=config,
+                    name=run_name,
+                    group=group_name,
+                    job_type=job_type,
+                    mode="offline",
+                    notes=config["wandb_note"],
+                )
+        else:
+            self.wandb = wandb.init(
+                    entity=team_name,
+                    project=project_name,
+                    config=config,
+                    name=run_name,
+                    group=group_name,
+                    job_type=job_type,
+                    mode=mode,
+                    notes=config["wandb_note"],
+                )
 
         self.console_logger.info("*******************")
         self.console_logger.info("WANDB RUN ID:")
