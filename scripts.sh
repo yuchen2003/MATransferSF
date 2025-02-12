@@ -60,3 +60,24 @@ CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config
 # test on sc2
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=sc2_transfer --task-config=sc2_test --seed=1 --use_wandb=True --wandb_note="tr_sf sc2 mton"
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=sc2_transfer --task-config=sc2_test --seed=1 --use_wandb=True --wandb_note="tr_sf sc2 ston"
+
+# without phi, new perspective, universal value decomposition(SF是universal value，用在MA中则是UVDecomp，广义值分解)
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="new tr_sf" 
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=sc2_transfer --task-config=sc2_test --seed=1 --use_wandb=True --wandb_note="new tr_sf"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="new tr_sf 1 phi"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="new tr_sf 1 phi stoc z_w"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="new tr_sf 4 phi"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="new tr_sf skill 4 phi"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="skill 4 phi w"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="skill 8 phi w small model"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=sc2_transfer --task-config=sc2_test --seed=1 --use_wandb=True --wandb_note="skill 8 phi w small model"
+#* 模型可以学起来，但是性能相比Qlearning差很多，原则上多个psi不会比单个Q更差；需进一步改进模型细节
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="skill pretrain"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="skill offline"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="skill offline no pretrain"
+#* 分离训练过程不可行，也许要更精细的frozen控制
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="skill 64 phi"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="skill 1 phi"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="old 1 phi"
+
+# curl https://p.nju.edu.cn/api/portal/v1/login -X POST -d'{"username":"211240066","password":"caqjew-tufhas-0piFce"}'

@@ -67,12 +67,10 @@ class MTDMAQQattnMixer(nn.Module):
                                nn.ReLU(),
                                nn.Linear(self.embed_dim, 1))
     
-    def forward(self, agent_qs, states, task_decomposer, phi_mode=False, w_inv=None, actions=None, max_q_i=None, is_v=False):
+    def forward(self, agent_qs, states, task_decomposer, phi_mode=False, actions=None, max_q_i=None, is_v=False):
         # agent_qs: [batch_size, seq_len, n_agents, d_phi]
         # states: [batch_size, seq_len, state_dim]
         bs, seq_len, n_agents, phi_dim = agent_qs.size()
-        agent_qs = agent_qs.permute(0, 3, 1, 2).reshape(bs*phi_dim, seq_len, n_agents)
-        bsd = agent_qs.size(0)
         n_enemies = task_decomposer.n_enemies
         n_entities = n_agents + n_enemies
 
@@ -95,14 +93,14 @@ class MTDMAQQattnMixer(nn.Module):
         entity_embed = th.cat([ally_embed, enemy_embed], dim=0) # [n_entity, bs, seq_len, entity_embed_dim]
 
         # do attention
-        proj_query = self.query(entity_embed).permute(1, 2, 0, 3).reshape(bsd * seq_len, n_entities, self.attn_embed_dim)
-        proj_key = self.key(entity_embed).permute(1, 2, 0, 3).reshape(bsd * seq_len, n_entities, self.attn_embed_dim)
+        proj_query = self.query(entity_embed).permute(1, 2, 0, 3).reshape(bs * seq_len, n_entities, self.attn_embed_dim)
+        proj_key = self.key(entity_embed).permute(1, 2, 0, 3).reshape(bs * seq_len, n_entities, self.attn_embed_dim)
         energy = th.bmm(proj_query, proj_key.transpose(1, 2)) / (self.attn_embed_dim ** (1 / 2))
         score = F.softmax(energy, dim=-1) # (bs*seq_len, n_entities, n_entities)
-        proj_value = entity_embed.permute(1, 2, 0, 3).reshape(bsd * seq_len, n_entities, self.entity_embed_dim)
+        proj_value = entity_embed.permute(1, 2, 0, 3).reshape(bs * seq_len, n_entities, self.entity_embed_dim)
         out = th.bmm(score, proj_value) # (bs * seq_len, n_entities, entity_embed_dim)
         # mean pooling over entity 
-        out = out.mean(dim=1).reshape(bsd, seq_len, self.entity_embed_dim)
+        out = out.mean(dim=1).reshape(bs, seq_len, self.entity_embed_dim)
 
         # concat timestep information
         if self.state_timestep_number:
@@ -116,16 +114,16 @@ class MTDMAQQattnMixer(nn.Module):
 
         w1 = F.softmax(self.hyper_w_1(entity_mixing_input), dim=-1) 
         w1 = w1.view(-1, n_agents, self.embed_dim) # (bs * seq_len, n_agents, x)
-        agent_qs = agent_qs.view(-1, 1, n_agents) # (bs*seq_len, 1, n_agents)
-        hidden = th.bmm(agent_qs, w1) # (bs*seq_len, 1, x); Q^h
+        agent_qs = agent_qs.permute(0, 1, 3, 2).view(-1, phi_dim, n_agents) # (bs*seq_len, phi_dim, n_agents)
+        hidden = th.bmm(agent_qs, w1) # (bs*seq_len, phi_dim, x); Q^h
 
         # Second layer
         w_final = th.abs(self.hyper_w_final(mixing_input)).view(-1, self.embed_dim, 1) # (bs*seq_len, x, 1)
         v = self.V(mixing_input).view(-1, 1, 1)
         
         # Compute final output
-        y = th.bmm(hidden, w_final) + v * w_inv # (bsd*seq_len, 1, 1) # FIXME sum on all phi_dim
+        y = th.bmm(hidden, w_final) + v # (bs*seq_len, phi_dim, 1)
 
-        q_tot = y.view(bs, phi_dim, -1, 1) # (bs, d_phi, T-1, 1)
-        q_tot = q_tot.permute(0, 2, 3, 1)
+        q_tot = y.view(bs, -1, phi_dim, 1) # (bs, seq_len, d_phi, 1)
+        q_tot = q_tot.permute(0, 1, 3, 2)  # (bs, seq_len, 1, d_phi)
         return q_tot

@@ -259,7 +259,7 @@ def run_sequential(args, logger):
         
         pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=pretrain_steps)
     
-    if args.ckpt_stage <= 1:
+    if args.ckpt_stage == 1:
         offline_train_steps = args.offline_train_steps
         logger.console_logger.info("Beginning multi-task offline training for {} timesteps".format(offline_train_steps))
         
@@ -270,7 +270,7 @@ def run_sequential(args, logger):
     # =======================
     #  Online Transfer Stage
     # =======================
-    if args.ckpt_stage <= 2: # always
+    if args.ckpt_stage == 2: # always
         logger.console_logger.info("Beginning preparing online buffers")
         # prepare online data buffer
         task2online_buffer = {}

@@ -17,7 +17,6 @@ target_update_interval_or_tau: 0.01
 agent_output_type: "q" # regard psi as q's
 learner: "tr_sf_learner"
 double_q: True
-# mixer: tr_dmaq_qatten # NOTE vdn(tr_vdn), vdn-with-bias, 1-qmix(tr_qatten), qplex(tr_dmaq_qatten)
 mixer: tr_dmaq_qatten
 task_emb_std: 0.1
 cql_alpha: 1. # largely depend on the quality of dataset
@@ -28,19 +27,18 @@ mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
 
-pretrain_steps: 0
+pretrain_steps: 100005
 offline_train_steps: 50005
 online_train_steps: 10005
 
 # 0: not trained, save pretraining model and not load or load from pretraining model; 
-ckpt_stage: 0
+# ckpt_stage: 0
 # checkpoint_path: 
 
 # 1: pretrained, save offline model and load pretrain model or load offline training model;
-# ckpt_stage: 1
-
-# checkpoint_path: 
-# load_step: 100000
+ckpt_stage: 1
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2025-02-12_12-06-09/models/pretrain
+# load_step: 30002
 
 # 2: pretrain + offline train, only do online learning, save online model, load pretrained offline model or load online training model;
 # ckpt_stage: 2
@@ -56,7 +54,6 @@ agent: "tr_sf_rnn"
 phi_dim: 1
 phi_hidden: 64
 
-
 # mac
 mac: "tr_basic_mac"
 use_gpi: False # GPI policy or multi-task value functions
@@ -64,7 +61,6 @@ use_gpi: False # GPI policy or multi-task value functions
 # params about observation decomposition
 id_length: 4
 max_agent: 15
-
 
 # params about mt mixing network
 entity_embed_dim: 64
