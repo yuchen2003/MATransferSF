@@ -1,0 +1,67 @@
+# --- Transfer QMIX+CQL specific parameters ---
+
+# use epsilon greedy action selector
+action_selector: "epsilon_greedy"
+epsilon_start: 1.0
+epsilon_finish: 0.05
+epsilon_anneal_time: 50000
+
+runner: "mt_episode"
+
+buffer_size: 5000
+
+# update the target network every {} episodes
+target_update_interval_or_tau: 0.01
+
+# use the Q_Learner to train
+agent_output_type: "q"
+learner: "mt_q_learner"
+double_q: True
+mixer: "mt_qattn"
+mixing_embed_dim: 32
+hypernet_layers: 2
+hypernet_embed: 64
+
+# agent type
+agent: "mt_rnn"
+
+# mac
+mac: "mt_basic_mac"
+
+# params about observation decomposition
+id_length: 4
+max_agent: 15
+
+
+# params about mt mixing network
+entity_embed_dim: 64
+attn_embed_dim: 8
+head: 1
+
+cql_alpha: 1. # largely depend on the quality of dataset
+cql_type: "base"
+
+
+name: "tr_qmix_cql"
+
+
+pretrain_steps: 205
+pretrain_batch_size: 256
+offline_train_steps: 205
+online_train_steps: 205 # for online train
+
+# 0: not trained, save pretraining model and not load or load from pretraining model; 
+ckpt_stage: 0
+# checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2024-12-31_15-21-34/models/pretrain" # 8 phi x 8 dim
+
+# 1: pretrained, save offline model and load pretrain model or load offline training model;
+# ckpt_stage: 1
+# checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/3m-expert+4m-expert/tr_sf/seed_1_tr_sf_2024-12-31_16-54-19/models/pretrain" # FIXME
+# load_step: 2
+
+# 2: pretrain + offline train, only do online learning, save online model, load pretrained offline model or load online training model;
+# ckpt_stage: 2
+# checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_bc/seed_1_tr_bc_2024-12-31_19-13-54/models/offline"
+# load_step: 205
+
+# 3: online trained, do evaluation, can load online trained model; use main_args.evaluate instead

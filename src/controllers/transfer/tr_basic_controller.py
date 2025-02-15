@@ -4,7 +4,6 @@ from components.action_selectors import REGISTRY as action_REGISTRY
 import torch as th
 import numpy as np
 import torch.nn.functional as F
-import torch.nn as nn
 
 class TrBasicMAC:
     def __init__(self, all_tasks, train_tasks, trans_tasks, task2scheme, task2args, main_args):
@@ -28,50 +27,31 @@ class TrBasicMAC:
         }
         self.task2decomposer = {}
         self.surrogate_decomposer = None
-
+        
         match self.main_args.env:
             case "sc2":
-                (
-                    aligned_unit_type_bits,
-                    aligned_shield_bits_ally,
-                    aligned_shield_bits_enemy,
-                ) = (0, 0, 0)
+                aligned_unit_type_bits, aligned_shield_bits_ally, aligned_shield_bits_enemy = 0, 0, 0
                 map_type_set = set()
                 for task in all_tasks:
                     task_args = self.task2args[task]
                     if not task_args.env == "sc2":
-                        raise NotImplementedError(
-                            f"Unsupported env decomposer {task_args.env}"
-                        )
-                    task_decomposer = decomposer_REGISTRY[
-                        env2decomposer[task_args.env]
-                    ](task_args)
-
-                    aligned_shield_bits_ally = max(
-                        aligned_shield_bits_ally, task_decomposer.shield_bits_ally
-                    )
-                    aligned_shield_bits_enemy = max(
-                        aligned_shield_bits_enemy, task_decomposer.shield_bits_enemy
-                    )
-                    # unit_types = get_unit_type_from_map_type(task_decomposer.map_type)
+                        raise NotImplementedError(f"Unsupported env decomposer {task_args.env}")
+                    task_decomposer = decomposer_REGISTRY[env2decomposer[task_args.env]](task_args)
+                    
+                    aligned_shield_bits_ally = max(aligned_shield_bits_ally, task_decomposer.shield_bits_ally)
+                    aligned_shield_bits_enemy = max(aligned_shield_bits_enemy, task_decomposer.shield_bits_enemy)
+                    #unit_types = get_unit_type_from_map_type(task_decomposer.map_type)
                     for unit_type in task_decomposer.unit_types:
                         map_type_set.add(unit_type)
 
-                    # task_decomposer._print_info()
+                    #task_decomposer._print_info()
                     self.task2decomposer[task] = task_decomposer
                     # set obs_shape, state_dim
-                    # task_args.obs_shape = task_decomposer.obs_dim
-                    # task_args.state_shape = task_decomposer.state_dim
-                aligned_unit_type_bits = (
-                    0 if len(map_type_set) == 1 else len(map_type_set)
-                )
+                    #task_args.obs_shape = task_decomposer.obs_dim
+                    #task_args.state_shape = task_decomposer.state_dim
+                aligned_unit_type_bits = 0 if len(map_type_set) == 1 else len(map_type_set)
                 for task in all_tasks:
-                    self.task2decomposer[task].align_feats_dim(
-                        aligned_unit_type_bits,
-                        aligned_shield_bits_ally,
-                        aligned_shield_bits_enemy,
-                        map_type_set,
-                    )
+                    self.task2decomposer[task].align_feats_dim(aligned_unit_type_bits, aligned_shield_bits_ally, aligned_shield_bits_enemy, map_type_set)
                     if not self.surrogate_decomposer:
                         self.surrogate_decomposer = self.task2decomposer[task]
                     task_args.obs_shape = self.task2decomposer[task].aligned_obs_dim
@@ -84,38 +64,53 @@ class TrBasicMAC:
                 for task in all_tasks:
                     if not self.surrogate_decomposer:
                         self.surrogate_decomposer = self.task2decomposer[task]
-
+        
         # build agents
         self.task2input_shape_info = self._get_input_shape()
         self._build_agents(self.task2input_shape_info)
-        self.task_weights = self.agent.task_weights
-        self.task2idx = self.agent.task2idx 
+        self.task2weights = {}        
         self.phi_dim = self.agent.phi_dim
+        for task in self.all_tasks: # NOTE init for all tasks; when eval on trained task, w is reused; when eval on new task, w here is to be learned
+            self.task2weights.update({task: th.ones(self.phi_dim, device=th.device(self.main_args.device))}) # TODO modify this to enable flexible trans_tasks (need no input of train_task and trans_task by adding a train record)
+        
         self.hidden_states = None
 
     def select_actions(self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False): # for execution
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = []
-        cur_w = self.task_weights[self.task2idx[task]]
-        # treat psi(batch; cur_task) * w(cur_task) as a value func
-        psi = self.forward(ep_batch, t_ep, task, test_mode=test_mode)[0]
-        psi = psi.transpose(-1, -2) # (bs, n, d_phi, n_act) -> (bs, n, n_act, d_phi)
-        agent_outputs = (psi * cur_w).sum(-1) # (bs, n, n_act)
+        cur_w = self.task2weights[task]
+        if self.use_gpi:
+            # 1. GPI policy: max psi(batch; train_task) * w(cur_task) over train_task, not calc psi for current task
+            for train_task in self.train_tasks:
+                train_w = self.task2weights[train_task]
+                psi = self.forward(ep_batch, t_ep, task, train_w, test_mode=test_mode) # psi: (bs, n, d_phi, n_act)
+                psi = psi.transpose(-1, -2) # (bs, n, n_act, d_phi)
+                q_vals = (psi * cur_w).sum(-1)
+                agent_outputs.append(q_vals)
+            agent_outputs = th.stack(agent_outputs, dim=-1) # (bs, n, n_act, n_train_task) # FIXME?
+            agent_outputs = agent_outputs.max(dim=-1).values
+        else:
+        # or 2. treat psi(batch; cur_task) * w(cur_task) as a value func
+            psi = self.forward(ep_batch, t_ep, task, cur_w, test_mode=test_mode)
+            psi = psi.transpose(-1, -2)
+            agent_outputs = (psi * cur_w).sum(-1)
 
         chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode)
         return chosen_actions
 
-    def forward(self, ep_batch, t, task, test_mode=False): # for training offline|online
+    def forward(self, ep_batch, t, task, task_weight=None, test_mode=False): # for training offline|online
         # NOTE online forward: train the same psi network for unseen task weights
         agent_inputs = self._build_inputs(ep_batch, t, task)
         avail_actions = ep_batch["avail_actions"][:, t] # (bs, n_agents, n_act)
         avail_actions = avail_actions.unsqueeze(2).repeat(1, 1, self.phi_dim, 1)
+        cur_actions = ep_batch["actions_onehot"][:, t]
         bs = ep_batch.batch_size
         n_agents = self.task2n_agents[task]
+        if task_weight is None:
+            task_weight = self.task2weights[task] # (1, d_phi)
 
-        self.hidden_states, psi, loss, loss_info = self.agent(agent_inputs, self.hidden_states, task, test_mode)
-        psi = psi.view(bs, n_agents, *psi.shape[-2:])
-        # psi: (bs, n, d_phi, n_act)
+        self.hidden_states, psi = self.agent(agent_inputs, cur_actions, self.hidden_states, task, task_weight)
+        # psi: (bs, n, d_phi, n_act); phi: (bs, n, d_phi)
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":
@@ -138,16 +133,19 @@ class TrBasicMAC:
                 if getattr(self.main_args, "mask_before_softmax", True):
                     # Zero out the unavailable actions, which have been softmax.
                     psi[avail_actions == 0] = 0.0
-
-        return psi, loss, loss_info
-
+        
+        return psi
+    
     def pretrain_forward(self, ep_batch, t, task):
         agent_inputs = self._build_inputs(ep_batch, t, task)
-
-        self.hidden_states, loss, loss_info = self.agent.pretrain_forward(agent_inputs, self.hidden_states, task)
-
-        return loss, loss_info
-
+        cur_actions = ep_batch["actions_onehot"][:, t]
+        
+        self.hidden_states, phi_out, mu, logvar, action_recon = self.agent.pretrain_forward(agent_inputs, cur_actions, self.hidden_states, task)
+        
+        action_recon = F.softmax(action_recon, dim=-1)
+        
+        return phi_out, mu, logvar, action_recon
+    
     def init_hidden(self, batch_size, task):
         self.hidden_states = self.agent.init_hidden().expand(batch_size * self.task2n_agents[task], -1)
 
@@ -156,7 +154,7 @@ class TrBasicMAC:
 
     def load_state(self, other_mac):
         self.agent.load_state_dict(other_mac.agent.state_dict())
-
+    
     def cuda(self):
         self.agent.cuda()
 
@@ -185,10 +183,10 @@ class TrBasicMAC:
                 inputs.append(batch["actions_onehot"][:, t-1])
         if task_args.obs_agent_id:
             inputs.append(th.eye(n_agents, device=batch.device).unsqueeze(0).expand(bs, -1, -1))
-
+        
         inputs = th.cat([x.reshape(bs*n_agents, -1) for x in inputs], dim=1)
         return inputs
-
+    
     def _get_input_shape(self):
         task2input_shape_info = {}
         for task in self.all_tasks:
@@ -196,7 +194,7 @@ class TrBasicMAC:
             obs_shape = task_scheme["obs"]["vshape"]
             input_shape = obs_shape
             last_action_shape = task_scheme["actions_onehot"]["vshape"][0]
-            # joint_action_shape = task_scheme["actions_onehot"]["vshape"][0] * self.task2n_agents[task]
+            #joint_action_shape = task_scheme["actions_onehot"]["vshape"][0] * self.task2n_agents[task]
             agent_id_shape = self.task2n_agents[task]
             if self.task2args[task].obs_last_action:
                 input_shape += last_action_shape

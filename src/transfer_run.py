@@ -270,7 +270,7 @@ def run_sequential(args, logger):
     # =======================
     #  Online Transfer Stage
     # =======================
-    if args.ckpt_stage == 2: # always
+    if args.ckpt_stage == 2:
         logger.console_logger.info("Beginning preparing online buffers")
         # prepare online data buffer
         task2online_buffer = {}
@@ -285,11 +285,10 @@ def run_sequential(args, logger):
             )
 
         online_train_steps = args.online_train_steps
+        logger.console_logger.info("Beginning online training for {} timesteps".format(online_train_steps))
         if main_args.multi_task_online:
-            logger.console_logger.info("Beginning MULTI-TASK online training for {} timesteps".format(online_train_steps))
             trans_sequential_mt(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=online_train_steps)
         else:
-            logger.console_logger.info("Beginning SINGLE-TASK online training for {} timesteps".format(online_train_steps))
             trans_sequential_st(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=online_train_steps)
         
         logger.console_logger.info(f"Finished online learning.")
@@ -411,7 +410,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             last_time = time.time()
             last_test_T = t_env
         
-        if main_args.save_model and (t_env - model_save_time >= main_args.save_model_interval):
+        if main_args.save_model and (t_env - model_save_time >= main_args.save_model_interval or model_save_time == 0):
             save_path = os.path.join(main_args.save_dir, 'offline', str(t_env))
             os.makedirs(save_path, exist_ok=True)
             logger.console_logger.info("Saving models to {}".format(save_path))
@@ -493,10 +492,10 @@ def trans_sequential_mt(trans_tasks, main_args, logger, learner, task2args, task
             test_start_time = time.time()
             
             with th.no_grad():
-                for val_task in main_args.all_tasks:
-                    task2runner[val_task].t_env = t_env
+                for task in main_args.all_tasks:
+                    task2runner[task].t_env = t_env
                     for _ in range(n_test_runs):
-                        task2runner[val_task].run(test_mode=True)
+                        task2runner[task].run(test_mode=True)
 
             test_time_total += time.time() - test_start_time
             
@@ -507,7 +506,7 @@ def trans_sequential_mt(trans_tasks, main_args, logger, learner, task2args, task
             last_time = time.time()
             last_test_T = t_env
         
-        if main_args.save_model and (t_env - model_save_time >= main_args.save_model_interval):
+        if main_args.save_model and (t_env - model_save_time >= main_args.save_model_interval or model_save_time == 0):
             save_path = os.path.join(main_args.save_dir, "online", str(t_env))
             os.makedirs(save_path, exist_ok=True)
             logger.console_logger.info("Saving models to {}".format(save_path))

@@ -27,15 +27,6 @@ class TrSFRNNAgent(nn.Module):
 
         self.phi_dim = args.phi_dim
         self.phi_hidden = args.phi_hidden
-        # self.phi_hidden = 2 * self.entity_embed_dim * args.head
-        self.num_tasks = len(task2input_shape_info)
-        w = th.ones(self.num_tasks, self.phi_dim) + (th.randn(self.num_tasks, self.phi_dim) * .1).clamp(-0.5, 0.5)
-        self.task_weights = nn.Parameter(w.to(th.device(args.device)))
-        self.task2idx = {}
-        for i, task in enumerate(task2input_shape_info):
-            self.task2idx.update({task: i})
-        
-        # NOTE weights should be *positive* to enable credit assignment
         
         self.task_emb_std = args.task_emb_std
 
@@ -45,49 +36,28 @@ class TrSFRNNAgent(nn.Module):
         self._build_policy(surrogate_decomposer)
 
         ## networks for successor features
-        self._build_SF(args)
+        self._build_SF(surrogate_decomposer)
 
     def init_hidden(self):
         # make hidden states on the same device as model
         return self.wo_action_layer_psi.weight.new(1, self.args.rnn_hidden_dim).zero_()
     
-    def pretrain_forward(self, inputs, hidden_state, task):
+    def pretrain_forward(self, inputs, cur_action, hidden_state, task):
+        pass
+
+    def forward(self, inputs, cur_action, hidden_state, task, task_weight): # psi forward
         bsn = inputs.shape[0]
         n_agents = self.task2n_agents[task]
-        bs = bsn // n_agents
         attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
-        h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
-        h = self.rnn(attn_feature, h_in)
-        # w = self.task_weights[self.task2idx[task]]
-        # task_emb = self._task_enc(w.unsqueeze(0)).repeat(h.shape[0], 1) # (bsn, hid)
-        # psi_input = th.cat([h, task_emb], dim=-1).reshape(bs, n_agents, -1)
-        psi_input = h.reshape(bs, n_agents, -1)
-        psi_hid, loss, loss_info = self.skill_enc(psi_input)
-
-        return h, loss, loss_info
-
-    def forward(self, inputs, hidden_state, task, test_mode): # psi forward
-        n_agents = self.task2n_agents[task]
-        bs = inputs.size(0) // n_agents
-        attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
+        # _, _, cur_compact_action = self.task2decomposer[task].decompose_action_info(cur_action)
+        # cur_compact_action = cur_compact_action.reshape(-1, cur_compact_action.shape[-1])
         h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
         h = self.rnn(attn_feature, h_in) # (bsn, hid)
-        # w = self.task_weights[self.task2idx[task]]
-        # task_emb = self._task_enc(w.unsqueeze(0)).repeat(h.shape[0], 1) # (bsn, hid)
+        task_emb = self._task_enc(task_weight.unsqueeze(0)).repeat(h.shape[0], 1) # (bsn, hid)
         
         ## forward psi
-        psi_input = h
-        psi_hid = self.psi(psi_input).view(-1, self.phi_dim, self.phi_hidden) # (bsn, d_phi, phi_hid)
-        loss = 0
-        loss_info = {}
-        # if test_mode:
-        #     psi_hid = self.skill_enc.execute_local(psi_input)
-        #     loss, loss_info = 0, None
-        # else:
-        #     psi_input = psi_input.reshape(bs, n_agents, -1)
-        #     psi_hid, loss, loss_info = self.skill_enc(psi_input) # (bsn, d_phi, phi_hid)
-        
-        wo_action_layer_in = F.leaky_relu(psi_hid)
+        psi_hid = self.psi(th.cat([h, task_emb], dim=-1)).view(-1, self.phi_dim, self.phi_hidden) # (bsn, d_phi, phi_hid)
+        wo_action_layer_in = F.relu(psi_hid)
         wo_action_psi = self.wo_action_layer_psi(wo_action_layer_in) # (bsn, d_phi, n_wo_action)
 
         if self.have_attack_action:
@@ -103,9 +73,9 @@ class TrSFRNNAgent(nn.Module):
             psi = th.cat([wo_action_psi, attack_action_psi], dim=-1)
         else:
             psi = wo_action_psi
-        # psi: (bsn, d_phi, n_act)
-        # psi = psi.view(bs, n_agents, self.phi_dim, -1)
-        return h, psi, loss, loss_info
+        # psi: (bsn, d_phi, n_act) -> (bs, n, d_phi, n_act)
+        psi = psi.view(-1, n_agents, self.phi_dim, cur_action.shape[-1])
+        return h, psi
 
     def _get_attn_feature(self, inputs, task):
         task_decomposer = self.task2decomposer[task]
@@ -142,8 +112,10 @@ class TrSFRNNAgent(nn.Module):
 
         # compute k, q, v for (multi-head) attention
         own_feature = self.own_value(own_obs) #(bs * n_agents, entity_embed_dim * n_heads)
+        # assert own_feature.size() == (bs * task_n_agents, self.entity_embed_dim * self.args.head), print("own feature size:", own_feature.size())
 
         query = self.query(own_obs)
+
         ally_keys = self.ally_key(ally_feats)  # (bs*n_agents, n_ally, attn_dim *n_heads)
         enemy_keys = self.enemy_key(enemy_feats)
         ally_values = self.ally_value(ally_feats)
@@ -227,11 +199,6 @@ class TrSFRNNAgent(nn.Module):
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim * self.args.head)
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim * self.args.head)
 
-        # SF self attention
-        # self.phi_query = nn.Linear(self.phi_hidden, self.attn_embed_dim * self.args.head)
-        # self.phi_key = nn.Linear(self.phi_hidden, self.attn_embed_dim * self.args.head)
-        # self.phi_value = nn.Linear(self.phi_hidden, self.phi_hidden)
-
     def _build_policy(self, surrogate_decomposer):
         ## get obs shape information
         match self.args.env:
@@ -262,16 +229,14 @@ class TrSFRNNAgent(nn.Module):
 
     # For transfer learning
     def _build_SF(self, args): 
-        self.task_enc = FCNet(self.phi_dim, self.phi_dim, hidden_dim=self.hidden_dim) # z(w)
-        self.skill_enc = VQcoorExtractor(args)
-        self.psi = FCNet(self.hidden_dim, self.phi_dim * self.phi_hidden)
+        self.task_enc = FCNet(self.phi_dim, self.hidden_dim) # z(w)
+        self.psi = FCNet(self.hidden_dim * 2, self.phi_dim * self.phi_hidden) # h, z(w) -> psi_hid
         
     def _task_enc(self, inputs):
         eps = th.randn_like(inputs).clamp(min=-0.5, max=0.5)
         inputs = inputs + eps * self.task_emb_std
         emb = self.task_enc(inputs)
         return emb
-        
 
 class FCNet(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_layer=1, hidden_dim=1024, use_leaky_relu=True, use_last_activ=False):
@@ -293,124 +258,3 @@ class FCNet(nn.Module):
             
     def forward(self, x):
         return self.layers(x)
-
-class VectorQuantizer(nn.Module):
-    """
-    Reference:
-    [1] https://github.com/deepmind/sonnet/blob/v2/sonnet/src/nets/vqvae.py
-    """
-    def __init__(self,
-                 num_embeddings: int,
-                 embedding_dim: int,
-                 beta: float = 0.25):
-        super(VectorQuantizer, self).__init__()
-        self.K = num_embeddings
-        self.D = embedding_dim
-        self.beta = beta
-
-        self.embedding = nn.Embedding(self.K, self.D)
-        self.embedding.weight.data.uniform_(-1 / self.K, 1 / self.K)
-
-    def forward(self, latents:th.Tensor):
-        shape = latents.shape
-        latents = latents.reshape(-1, shape[-1])
-        # latents shape: (bsn, d)
-        # Compute L2 distance between latents and embedding weights
-        dist = th.sum(latents ** 2, dim=1, keepdim=True) + \
-               th.sum(self.embedding.weight ** 2, dim=1) - \
-               2 * th.matmul(latents, self.embedding.weight.t())  # [B, K]
-
-        # Get the encoding that has the min distance
-        encoding_inds = th.argmin(dist, dim=1).unsqueeze(1)  # [B, 1]
-
-        # Convert to one-hot encodings
-        device = latents.device
-        encoding_one_hot = th.zeros(encoding_inds.size(0), self.K, device=device)
-        encoding_one_hot.scatter_(1, encoding_inds, 1)  # [B, K]
-
-        # Quantize the latents
-        quantized_latents = th.matmul(encoding_one_hot, self.embedding.weight)  # [B, D]
-
-        # Compute the VQ Losses
-        commitment_loss = F.mse_loss(quantized_latents.detach(), latents)
-        embedding_loss = F.mse_loss(quantized_latents, latents.detach())
-
-        vq_loss = commitment_loss * self.beta + embedding_loss
-
-        # Add the residue back to the latents
-        quantized_latents = latents + (quantized_latents - latents).detach()
-        quantized_latents = quantized_latents.reshape(*shape)
-
-        return quantized_latents, vq_loss  # [B, D]
-
-class VQcoorExtractor(nn.Module):
-    def __init__(self, args, beta=0.25, dropout=0.01):
-        super().__init__()
-        self.embed_dim = args.entity_embed_dim * args.head
-        self.embed_num = args.phi_dim
-        assert args.head == 1
-        
-        # encoder: in_dim -> *hidden_dims -> embed_dim
-        self.d_attn = args.attn_embed_dim * args.head
-        self.Wq = nn.Linear(self.embed_dim, self.d_attn)
-        self.Wk = nn.Linear(self.embed_dim, self.d_attn)
-        self.Wv = nn.Linear(self.embed_dim, self.embed_dim)
-        self.norm1 = nn.LayerNorm(self.embed_dim)
-        self.norm2 = nn.LayerNorm(self.embed_dim)
-        self.dropout = nn.Dropout(dropout)
-        self.ffn = FCNet(self.embed_dim, self.embed_dim, hidden_dim=4*self.embed_dim)
-        
-        # vector quantizer
-        self.vq_layer = VectorQuantizer(self.embed_num, self.embed_dim, beta)
-        
-        # decoder: embed_dim -> *hidden_dims -> out_dim
-        self.dec = FCNet(self.embed_dim, self.embed_dim, hidden_layer=2)
-        
-        # local inference
-        self.local_infer = FCNet(self.embed_dim, self.embed_dim)
-        
-    # for training
-    def forward(self, x):
-        # x: (bs, n, in_dim) -> (bs, n, embed_dim); individual skill inference
-        energy = th.bmm(self.Wq(x), self.Wk(x).transpose(1, 2)) / (self.d_attn ** 0.5)
-        score = F.softmax(energy, dim=-1)
-        attn_out = th.bmm(score, self.Wv(x)) 
-        z = self.norm1(x + self.dropout(attn_out))
-        ffn_out = self.ffn(z)
-        z_coor = self.norm2(z + self.dropout(ffn_out)) # coordination skill inference; can replace with transformer encoder
-        
-        z_local = self.local_infer(x) # local coor infer
-        infer_loss = F.mse_loss(z_coor.detach(), z_local)
-        
-        z_quant, vq_loss = self.vq_layer(z_coor)
-        x_recon = self.dec(z_quant)
-        recon_loss = F.mse_loss(x_recon, x)
-        
-        z_coor = z_coor.unsqueeze(2) \
-            .repeat(1, 1, self.embed_num, 1) # (bs, n, embed_num, embed_dim)
-        z_dict = self.vq_layer.embedding.weight.unsqueeze(0).unsqueeze(1) \
-            .repeat(x.size(0), x.size(1), 1, 1) # (bs, n, embed_num=phi_dim, embed_dim)
-        psi_hid = th.cat([z_coor, z_dict], dim=-1)
-        psi_hid = psi_hid.view(-1, *psi_hid.shape[2:]) # (bs*n, embed_num, 2*embed_dim)
-        
-        loss = recon_loss + vq_loss + infer_loss
-        loss_info = {
-            "recon": recon_loss.item(),
-            "vq": vq_loss.item(),
-            "infer": infer_loss.item(),
-            "coor_all": (recon_loss + vq_loss + infer_loss).item()
-        }
-        
-        return psi_hid, loss, loss_info
-    
-    # for execution
-    def execute_local(self, x):
-        z_local = self.local_infer(x)
-        z_local = z_local.unsqueeze(1) \
-            .repeat(1, self.embed_num, 1) # (bsn, embed_num, embed_dim)
-        z_dict = self.vq_layer.embedding.weight.unsqueeze(0) \
-            .repeat(x.size(0), 1, 1) # (bsn, embed_num=phi_dim, embed_dim)
-        psi_hid = th.cat([z_local, z_dict], dim=-1) # (bsn, embed_num, 2*embed_dim)
-        
-        return psi_hid
-    

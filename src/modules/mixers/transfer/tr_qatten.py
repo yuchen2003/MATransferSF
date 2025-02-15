@@ -70,7 +70,7 @@ class MTQMixer(nn.Module):
     def forward(self, agent_qs, states, task_decomposer, r_mode=False):
         # agent_qs: [batch_size, seq_len, n_agents]
         # states: [batch_size, seq_len, state_dim]
-        bs, seq_len, n_agents = agent_qs.size() # TODO
+        bs, seq_len, n_agents = agent_qs.size()
         n_enemies = task_decomposer.n_enemies
         n_entities = n_agents + n_enemies
 

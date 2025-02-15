@@ -21,5 +21,3 @@ tasks_offline_bottom_data_paths: {
 
 trans_tasks: ["5m", "7m"]
 test_tasks: ["3m", "4m", "5m", "7m"]
-
-multi_task_online: False

@@ -30,6 +30,4 @@ trans_tasks: [ # for transfer
   "lbforaging:Foraging-5x5-3p-3f-coop-v2",
   "lbforaging:Foraging-5x5-4p-2f-coop-v2",
 ]
-
-multi_task_online: True # train on multiple tasks at the same time in the online stage
-# multi_task_online: False 
+multi_task_online: False # train on multiple tasks at the same time in the online stage
