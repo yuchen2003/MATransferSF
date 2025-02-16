@@ -1,19 +1,21 @@
 .DS_Store
-tmp*
+.vscode/
+*.pt 
 *.tar.gz
 *.zip
+3rdparty/
+data/
+dataset_backup/
+dataset/
+envs/
 output/
 outputs/
-data/
-dataset/
-dataset_backup/
-3rdparty/
-results/
-.vscode/
-wandb/
 patches/
-envs/
-*.pt 
+results.*
+results/
+src.*
+tmp*
+wandb/
 
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode

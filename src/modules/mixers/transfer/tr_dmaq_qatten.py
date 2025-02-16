@@ -67,7 +67,7 @@ class MTDMAQQattnMixer(nn.Module):
                                nn.ReLU(),
                                nn.Linear(self.embed_dim, 1))
     
-    def forward(self, agent_qs, states, task_decomposer, phi_mode=False, actions=None, max_q_i=None, is_v=False):
+    def forward(self, agent_qs, states, task_decomposer):
         # agent_qs: [batch_size, seq_len, n_agents, d_phi]
         # states: [batch_size, seq_len, state_dim]
         bs, seq_len, n_agents, phi_dim = agent_qs.size()
@@ -112,10 +112,15 @@ class MTDMAQQattnMixer(nn.Module):
                                        ally_embed.permute(1, 2, 0, 3)], dim=-1) # (bs, seq_len, n_agents, x)
         mixing_input = out
 
-        w1 = F.softmax(self.hyper_w_1(entity_mixing_input), dim=-1) 
+        # FIXME use more complex mixing network
+        # w1 = F.softmax(self.hyper_w_1(entity_mixing_input), dim=-1) 
+        # w1 = w1.view(-1, n_agents, self.embed_dim) # (bs * seq_len, n_agents, x)
+        w1 = th.abs(self.hyper_w_1(entity_mixing_input))
+        b1 = self.hyper_b_1(mixing_input)
         w1 = w1.view(-1, n_agents, self.embed_dim) # (bs * seq_len, n_agents, x)
+        b1 = b1.view(-1, 1, self.embed_dim) # (bs * seq_len , 1, x)
         agent_qs = agent_qs.permute(0, 1, 3, 2).view(-1, phi_dim, n_agents) # (bs*seq_len, phi_dim, n_agents)
-        hidden = th.bmm(agent_qs, w1) # (bs*seq_len, phi_dim, x); Q^h
+        hidden = F.elu(th.bmm(agent_qs, w1)) # (bs*seq_len, phi_dim, x); Q^h
 
         # Second layer
         w_final = th.abs(self.hyper_w_final(mixing_input)).view(-1, self.embed_dim, 1) # (bs*seq_len, x, 1)

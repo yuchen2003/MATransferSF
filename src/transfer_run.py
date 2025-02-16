@@ -270,7 +270,7 @@ def run_sequential(args, logger):
     # =======================
     #  Online Transfer Stage
     # =======================
-    if args.ckpt_stage == 2:
+    if args.ckpt_stage == 2: # always
         logger.console_logger.info("Beginning preparing online buffers")
         # prepare online data buffer
         task2online_buffer = {}

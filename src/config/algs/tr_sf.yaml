@@ -2,9 +2,9 @@
 
 # use epsilon greedy action selector
 action_selector: "epsilon_greedy"
-epsilon_start: 0
-epsilon_finish: 0
-epsilon_anneal_time: 1
+epsilon_start: 0.2
+epsilon_finish: 0.05
+epsilon_anneal_time: 2000
 
 runner: "mt_episode" # the same way to handle multi-task info in runners
 
@@ -53,7 +53,7 @@ ckpt_stage: 1
 
 # agent type
 agent: "tr_sf_rnn"
-phi_dim: 1
+phi_dim: 3
 phi_hidden: 64
 
 

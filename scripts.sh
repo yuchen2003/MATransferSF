@@ -81,10 +81,17 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config
 CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="old 1 phi"
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="debug phi"
 CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="debug phi"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="debug phi seed 1"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="debug phi seed 2"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="debug phi seed 3"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=3407 --use_wandb=True --wandb_note="debug phi seed 3407"
 
 #* 2.14 比对cur和ref没有发现显著差别，但两者性能仍然差很多，原因未知，故打算从ref开始调；相关对比在"debug phi"标记下
 #* 训练任务和2f任务上性能都可以提升到最优，而3f任务上差异很大，说明某个因素是影响任务泛化性能（或是对训练任务的过拟合）的关键
-#* mixer无影响；task weight的某个流程有问题，这种泛化性能应该是基础架构提供的
+#* mixer无影响；task weight的某个流程有问题，可能是多个类属性的共享有问题（更正）；这种泛化性能应该是基础架构提供的
+#* 调试发现是agent中的一些冗余模块造成的，这些冗余模块可能对参数初始化和优化过程造成了影响，从而影响了学习过程，本质上是核心模型鲁棒性较差
+#* 仅调整seed也产生了相近现象，说明确实是不鲁棒的问题，这一点可以作为基座性能的一点观察，如果能改进则是本项目的一个贡献
 
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="phi's"
 
 # curl https://p.nju.edu.cn/api/portal/v1/login -X POST -d'{"username":"211240066","password":"caqjew-tufhas-0piFce"}'

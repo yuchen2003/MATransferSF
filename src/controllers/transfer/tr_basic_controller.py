@@ -79,21 +79,9 @@ class TrBasicMAC:
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = []
         cur_w = self.task2weights[task]
-        if self.use_gpi:
-            # 1. GPI policy: max psi(batch; train_task) * w(cur_task) over train_task, not calc psi for current task
-            for train_task in self.train_tasks:
-                train_w = self.task2weights[train_task]
-                psi = self.forward(ep_batch, t_ep, task, train_w, test_mode=test_mode) # psi: (bs, n, d_phi, n_act)
-                psi = psi.transpose(-1, -2) # (bs, n, n_act, d_phi)
-                q_vals = (psi * cur_w).sum(-1)
-                agent_outputs.append(q_vals)
-            agent_outputs = th.stack(agent_outputs, dim=-1) # (bs, n, n_act, n_train_task) # FIXME?
-            agent_outputs = agent_outputs.max(dim=-1).values
-        else:
-        # or 2. treat psi(batch; cur_task) * w(cur_task) as a value func
-            psi = self.forward(ep_batch, t_ep, task, cur_w, test_mode=test_mode)
-            psi = psi.transpose(-1, -2)
-            agent_outputs = (psi * cur_w).sum(-1)
+        psi = self.forward(ep_batch, t_ep, task, cur_w, test_mode=test_mode)
+        psi = psi.transpose(-1, -2)
+        agent_outputs = (psi * cur_w).sum(-1)
 
         chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode)
         return chosen_actions
@@ -103,13 +91,10 @@ class TrBasicMAC:
         agent_inputs = self._build_inputs(ep_batch, t, task)
         avail_actions = ep_batch["avail_actions"][:, t] # (bs, n_agents, n_act)
         avail_actions = avail_actions.unsqueeze(2).repeat(1, 1, self.phi_dim, 1)
-        cur_actions = ep_batch["actions_onehot"][:, t]
-        bs = ep_batch.batch_size
-        n_agents = self.task2n_agents[task]
         if task_weight is None:
             task_weight = self.task2weights[task] # (1, d_phi)
 
-        self.hidden_states, psi = self.agent(agent_inputs, cur_actions, self.hidden_states, task, task_weight)
+        self.hidden_states, psi = self.agent(agent_inputs, self.hidden_states, task, task_weight)
         # psi: (bs, n, d_phi, n_act); phi: (bs, n, d_phi)
 
         # Softmax the agent outputs if they're policy logits
