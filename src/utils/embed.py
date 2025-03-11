@@ -14,3 +14,8 @@ def binary_embed(v, length, v_max):
     embed_vec[-len(bin_v):] = bin_v
     return embed_vec
     
+def onehot_embed(v, length):
+    assert 0 <= v < length
+    embed_vec = np.zeros(length,)
+    embed_vec[v] = 1.
+    return embed_vec

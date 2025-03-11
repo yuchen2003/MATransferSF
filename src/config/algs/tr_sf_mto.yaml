@@ -1,0 +1,62 @@
+# --- Transfer with SF specific parameters ---
+
+# use epsilon greedy action selector
+action_selector: "epsilon_greedy"
+epsilon_start: 0.0
+epsilon_finish: 0.0
+epsilon_anneal_time: 1
+
+runner: "mt_episode" # the same way to handle multi-task info in runners
+
+buffer_size: 5000
+
+test_interval: 1000
+log_interval: 1000
+runner_log_interval: 1000
+learner_log_interval: 1000
+
+# update the target network every {} episodes
+target_update_interval_or_tau: 0.01
+
+# learner />
+agent_output_type: "q" # regard psi as q's
+learner: "tr_sf_learner"
+double_q: True
+# mixer: tr_dmaq_qatten # NOTE vdn(tr_vdn), vdn-with-bias, 1-qmix(tr_qatten), qplex(tr_dmaq_qatten)
+mixer: tr_dmaq_qatten
+task_emb_std: 0.1
+cql_alpha: 1. # largely depend on the quality of dataset
+cql_type: "base"
+
+# qmix
+mixing_embed_dim: 32
+hypernet_layers: 2
+hypernet_embed: 64
+
+pretrain_batch_size: 64
+pretrain_steps: 20005
+offline_train_steps: 50005
+online_train_steps: 10005
+
+ckpt_stage: 0
+# checkpoint_path: 
+
+# </ learner
+
+# agent type
+agent: "tr_sf_rnn"
+phi_dim: 64
+
+# mac
+mac: "tr_basic_mac"
+
+# params about observation decomposition
+id_length: 4
+max_agent: 15
+
+# params about mt mixing network
+entity_embed_dim: 64
+attn_embed_dim: 8
+head: 1
+
+name: "tr_sf"

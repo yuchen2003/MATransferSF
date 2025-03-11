@@ -46,12 +46,12 @@ class MTDMAQQattnMixer(nn.Module):
             hypernet_embed = self.main_args.hypernet_embed
             self.hyper_w_1 = nn.Sequential(
                 nn.Linear(entity_mixing_input_dim, hypernet_embed),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.Linear(hypernet_embed, self.embed_dim),
             )
             self.hyper_w_final = nn.Sequential(
                 nn.Linear(mixing_input_dim, hypernet_embed),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.Linear(hypernet_embed, self.embed_dim),
             )
         elif getattr(main_args, "hypernet_layers", 1) > 2:
@@ -64,7 +64,7 @@ class MTDMAQQattnMixer(nn.Module):
 
         # V(s) instead of a bias for the last layers
         self.V = nn.Sequential(nn.Linear(mixing_input_dim, self.embed_dim),
-                               nn.ReLU(),
+                               nn.LeakyReLU(),
                                nn.Linear(self.embed_dim, 1))
     
     def forward(self, agent_qs, states, task_decomposer):
@@ -112,7 +112,6 @@ class MTDMAQQattnMixer(nn.Module):
                                        ally_embed.permute(1, 2, 0, 3)], dim=-1) # (bs, seq_len, n_agents, x)
         mixing_input = out
 
-        # FIXME use more complex mixing network
         # w1 = F.softmax(self.hyper_w_1(entity_mixing_input), dim=-1) 
         # w1 = w1.view(-1, n_agents, self.embed_dim) # (bs * seq_len, n_agents, x)
         w1 = th.abs(self.hyper_w_1(entity_mixing_input))
