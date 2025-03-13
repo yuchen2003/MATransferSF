@@ -33,13 +33,17 @@ mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
 
-pretrain_batch_size: 64
-pretrain_steps: 20005
+pretrain_batch_size: 32
+pretrain_steps: 100005
 offline_train_steps: 50005
 online_train_steps: 10005
+adapt_steps: 10005
 
 ckpt_stage: 0
-# checkpoint_path: 
+lr: 0.005
+# ckpt_stage: 1
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2025-03-13_16-39-27/models/pretrain
+# load_step: 10005
 
 # </ learner
 

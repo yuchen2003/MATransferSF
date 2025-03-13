@@ -146,6 +146,41 @@ CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-con
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="online"
 #* 基任务没有unlearn，4p2f上快速对齐Q值，性能正常(500 traj)，但w未起作用；3p3f在1k补收敛，性能等同于off阶段性能，说明也没有learning发生，说明当前on阶段task explain的方式过于弱，可能有利于快适应，但不适应继续学习（w之间差别不大说明task explain不会起到作用，但这应该是特征层的问题）
 
+#* 尝试多阶段训练
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain with state"
+#* 梯度消失；debug发现state token proj时值趋向于变大，经过动作头之后接近发散，此时梯度消失
+#* 翻转obs|state QKV；不用state
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain wo state"
+#* 翻转后仍然会 xx梯度爆炸xx 梯度消失，可能是对state的处理不当；仅用obs损失更低，考虑使用该设置
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 32 lr 5e-4" --pretrain_batch_size=32 &&
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 16 lr 5e-4" --pretrain_batch_size=16 &&
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 8 lr 5e-4" --pretrain_batch_size=8
+#* 32或64更稳定 -> 64 + 大学习率
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 32 lr 5e-3" --pretrain_batch_size=32 --lr=0.005 &&
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 32 lr 1e-3" --pretrain_batch_size=32 --lr=0.001 &&
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 32 lr 1e-4" --pretrain_batch_size=32 --lr=0.0001
+#* 1e-3或5e-3这样较大的学习率会更好，收敛更快，Adam自动调整应该起到主要作用；lr再大不行了
+
+#* 64 + 大学习率
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 64 lr 1e-2" --lr=0.01 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 64 lr 2e-2" --lr=0.02 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 64 lr 5e-2" --lr=0.05 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 64 lr 1e-1" --lr=0.1 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="invdyn pretrain bs 64 lr 5e-3" --lr=0.005
+#* 32 + 5e-3 vs. 64 + 5e-3基本相近，前者能省一点资源
+
+#* 稳定性
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="invdyn pretrain stability" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="invdyn pretrain stability" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="invdyn pretrain stability" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="invdyn pretrain stability" &
+wait
+#* OK.
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="invdyn pretrain more param"
+#* 但是增加action head的参数就会造成梯度消失
+#* 更少参数（单层线性层）收敛到次优
+
 curl https://p.nju.edu.cn/api/portal/v1/login -X POST -d'{"username":"211240066","password":"caqjew-tufhas-0piFce"}'
 // "args": [
 //     "--online",

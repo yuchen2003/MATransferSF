@@ -46,20 +46,20 @@ class GymDecomposer:
 
     def decompose_state(self, state_input):
         # state_input = [enemy_state(food), self_state, ally_state]
-        # assume state_input.shape == [batch_size, seq_len, state]
+        # assume state_input.shape == [batch_size, state]
         
         # extract enemy_states
         enemy_states = [state_input[:, :, i * self.state_nf_en:(i + 1) * self.state_nf_en] for i in range(self.n_enemies)]
         # extract ally_states
         base = self.n_agents * self.state_nf_en
-        ally_states = [state_input[:, :, base + i * self.state_nf_al: base + (i + 1) * self.state_nf_al] for i in range(self.n_agents)] # include self_state at [0]
+        agent_states = [state_input[:, :, base + i * self.state_nf_al: base + (i + 1) * self.state_nf_al] for i in range(self.n_agents)] # include self_state at [0]
 
         # extract last_action_states
         last_action_states = []
         # extract timestep_number_state
         timestep_number_state = []
 
-        return ally_states, enemy_states, last_action_states, timestep_number_state
+        return agent_states, enemy_states, last_action_states, timestep_number_state
 
     def decompose_obs(self, obs_input):
         """
@@ -93,15 +93,12 @@ class GymDecomposer:
         bin_attack_info = no_attack_action_info[:, -1:]
         
         # recover shape: (bs, n, *)
-        no_attack_action_info = no_attack_action_info.reshape(*shape[:-1], self.n_actions_no_attack)    
+        no_attack_action_info = no_attack_action_info.reshape(*shape[:-1], -1)    
         attack_action_info = attack_action_info.reshape(*shape[:-1], -1)
-        bin_attack_info = bin_attack_info.reshape(*shape[:-1], 1)
+        bin_attack_info = bin_attack_info.reshape(*shape[:-1], -1)
         
         # get compact action
         compact_action_info = th.cat([no_attack_action_info, bin_attack_info], dim=-1) # NOTE picking-up food is regarded as agent' own action, not scalable wrt n_enemies, however also regarded as attack action as in compact_action
         
         return no_attack_action_info, attack_action_info, compact_action_info
-
-def lbf_nearby(agent, food):
-    if agent[0].item() == -1 or food[0].item() == -1: return False
-    return (th.sum(th.abs(agent[:-1] - food[:-1])) <= 1)
+    

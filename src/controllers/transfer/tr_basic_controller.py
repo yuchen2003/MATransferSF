@@ -82,23 +82,28 @@ class TrBasicMAC:
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = []
         cur_w = self.explain_task(task)
-        psi = self.forward(ep_batch, t_ep, task, cur_w, test_mode=test_mode)[1]
+        psi = self.forward(ep_batch, t_ep, task)[1]
         psi = psi.transpose(-1, -2)
         agent_outputs = (psi * cur_w).sum(-1)
 
         chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode)
         
-        # TODO print more value here
-        
         return chosen_actions
 
-    def forward(self, ep_batch, t, task, task_weight=None, test_mode=False): # for training offline|online
+    def pretrain_forward(self, states, obs, next_states, next_obs, task):
+        bs, seq_len, n_agents = obs.shape[:3]
+        states = self._build_flat(states)
+        obs = self._build_flat(obs)
+        next_states = self._build_flat(next_states)
+        next_obs = self._build_flat(next_obs)
+        action_pred = self.agent.pretrain_forward(states, obs, next_states, next_obs, task).reshape(bs, seq_len, n_agents, -1)
+        return action_pred
+    
+    def forward(self, ep_batch, t, task): # for training offline|online
         # NOTE online forward: train the same psi network for unseen task weights
         agent_inputs = self._build_inputs(ep_batch, t, task)
-        if task_weight is None:
-            task_weight = self.task2ids[task] # (1, d_phi)
         
-        self.hidden_states, phi, psi, loss, loss_info = self.agent(agent_inputs, self.hidden_states, task, task_weight, test_mode)
+        self.hidden_states, phi, psi, loss, loss_info = self.agent(agent_inputs, self.hidden_states, task)
         # psi: (bs, n, d_phi, n_act)
 
         # Softmax the agent outputs if they're policy logits
@@ -170,6 +175,12 @@ class TrBasicMAC:
             inputs.append(th.eye(n_agents, device=batch.device).unsqueeze(0).expand(bs, -1, -1))
         
         inputs = th.cat([x.reshape(bs*n_agents, -1) for x in inputs], dim=1)
+        return inputs
+    
+    def _build_flat(self, inputs):
+        shape = inputs.shape
+        bs, seq_len = shape[:2]
+        inputs = inputs.reshape(bs * seq_len, *shape[2:])
         return inputs
     
     def _get_input_shape(self):

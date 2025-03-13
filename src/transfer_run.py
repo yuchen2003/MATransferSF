@@ -27,7 +27,6 @@ import numpy as np
 
 import cProfile, pstats, io
 DO_PROFILE = False
-gt_env = 0
 
 def run(_run, _config, _log):
 
@@ -252,9 +251,10 @@ def run_sequential(args, logger):
         pretrain_steps = args.pretrain_steps
         logger.console_logger.info("Beginning upsupervised pretraining for {} timesteps".format(pretrain_steps))
         
-        train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=pretrain_steps, mode='pretrain')
+        mac.agent.set_train_mode('pretrain')
+        pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, pretrain_steps)
         
-        logger.console_logger.info(f"Finished Pretraining, start offline learning.")
+        logger.console_logger.info(f"Finished Pretraining.")
     
     # =======================
     #   Offline Train Stage
@@ -263,9 +263,10 @@ def run_sequential(args, logger):
         offline_train_steps = args.offline_train_steps
         logger.console_logger.info("Beginning multi-task offline training for {} timesteps".format(offline_train_steps))
         
+        mac.agent.set_train_mode('offline')
         train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=offline_train_steps, mode='offline')
             
-        logger.console_logger.info(f"Finished Training, start online learning.")
+        logger.console_logger.info(f"Finished Training.")
 
     # =======================
     #  Online Transfer Stage
@@ -287,6 +288,7 @@ def run_sequential(args, logger):
         online_train_steps = args.online_train_steps
         logger.console_logger.info("Beginning online training for {} timesteps".format(online_train_steps))
         
+        mac.agent.set_train_mode('online')
         trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=online_train_steps)
         
         logger.console_logger.info(f"Finished online learning.")
@@ -295,10 +297,11 @@ def run_sequential(args, logger):
     #  Task Adaptation Only
     # =======================
     if args.ckpt_stage == 3:
-        ft_steps = args.online_train_steps
-        logger.console_logger.info("Beginning task adaptation for {} timesteps".format(ft_steps))
+        adapt_steps = args.adapt_steps
+        logger.console_logger.info("Beginning task adaptation for {} timesteps".format(adapt_steps))
         
-        train_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, ft_steps, mode='adaptation')
+        mac.agent.set_train_mode('adapt')
+        train_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, adapt_steps, mode='adapt')
         
         logger.console_logger.info(f"Finished task adaptation.")
 
@@ -309,10 +312,9 @@ def pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task
     '''
     For unsupervised pretraining phi 
     '''
-    global gt_env
-    t_env = gt_env
+    t_env = 0
     episode = 0
-    t_max = train_steps + gt_env
+    t_max = train_steps
     model_save_time = t_env
     last_test_T = t_env
     last_log_T = t_env
@@ -336,6 +338,15 @@ def pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task
             episode += batch_size
             
         if (t_env - last_test_T) / main_args.test_interval >= 1 or t_env >= t_max:
+            # test_start_time = time.time()
+            
+            # for task in main_args.train_tasks:
+            #     episode_sample = task2offline_buffer[task].sample(batch_size)
+            #     if episode_sample.device != main_args.device:
+            #         episode_sample.to(main_args.device)
+            
+            # test_time_total += time.time() - test_start_time
+            
             logger.console_logger.info("Step: {} / {}".format(t_env, t_max))
             logger.console_logger.info("Estimated time left: {}. Time passed: {}. Test time cost: {}".format(
                 time_left(last_time, last_test_T, t_env, t_max), time_str(time.time() - start_time), time_str(test_time_total)
@@ -357,17 +368,14 @@ def pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task
         logger.console_logger.info("Saving final models to {}".format(save_path))
         learner.save_models(save_path)
         
-    gt_env = t_env
-        
 def train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=50000, mode='offline'):
     '''
     For offline learning based on multitask datasets
     '''
-    assert mode in ['offline', 'adaptation']
-    global gt_env
-    t_env = gt_env
+    assert mode in ['offline', 'adapt']
+    t_env = 0
     episode = 0
-    t_max = train_steps + gt_env
+    t_max = train_steps
     model_save_time = t_env
     last_test_T = t_env
     last_log_T = t_env
@@ -437,8 +445,6 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
         os.makedirs(save_path, exist_ok=True)
         logger.console_logger.info("Saving final models to {}".format(save_path))
         learner.save_models(save_path)
-        
-    gt_env = t_env
 
 
 def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=200000):
@@ -446,10 +452,9 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
     For online transfer learning on multiple tasks
     the offline model is resumed to learn on multiple task at the same time.
     '''
-    global gt_env
-    t_env = gt_env
+    t_env = 0
     episode = 0
-    t_max = train_steps + gt_env
+    t_max = train_steps
     model_save_time = t_env
     last_test_T = t_env
     last_log_T = t_env
@@ -533,8 +538,6 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
         os.makedirs(save_path, exist_ok=True)
         logger.console_logger.info("Saving final models to {}".format(save_path))
         learner.save_models(save_path)
-            
-    gt_env = t_env
 
 
 

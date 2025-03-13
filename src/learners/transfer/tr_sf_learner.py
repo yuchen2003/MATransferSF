@@ -89,9 +89,36 @@ class TransferSFLearner:
                 self.task2rew_ms[task] = RunningMeanStd(shape=(1, ), device=device)
     
     def pretrain(self, batch, t_env: int, episode_num: int, task: str):
-        pass
+        states = batch["state"][:, :-1]
+        obs = batch["obs"][:, :-1]
+        next_states = batch["state"][:, 1:]
+        next_obs = batch["obs"][:, 1:]
+        actions = batch["actions"][:, :-1]
+        actions_onehot = batch["actions_onehot"][:, :-1]
+        terminated = batch["terminated"][:, :-1].float()
+        mask = batch["filled"][:, :-1].float()
+        mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
+        
+        action_pred = self.mac.pretrain_forward(states, obs, next_states, next_obs, task)
+        mask = mask.unsqueeze(-1).repeat(1, 1, *actions_onehot.shape[-2:])
+        loss = F.binary_cross_entropy(action_pred * mask, actions_onehot * mask)
+        
+        self.optimiser.zero_grad()
+        loss.backward()
+        grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.main_args.grad_norm_clip, error_if_nonfinite=True)
+        self.optimiser.step()
+        self.total_training_steps += 1
+        self.task2train_info[task]["training_steps"] += 1
+        
+        if t_env - self.task2train_info[task]["log_stats_t"] >= self.task2args[task].learner_log_interval:
+            self.logger.log_stat(f"{task}/loss", loss.item(), t_env)
+            self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
+            self.task2train_info[task]["log_stats_t"] = t_env
+            if grad_norm.item() == 0:
+                print("ERROR...")
     
     def train(self, batch, t_env: int, episode_num: int, task: str, mode: str):
+        ''' mode = | offline | online | adapt | '''
         bs = batch.batch_size
         n_agents = self.task2args[task].n_agents
         rewards = batch["reward"][:, :-1] # (bs, T-1, *)
@@ -171,7 +198,6 @@ class TransferSFLearner:
             target_max_psi_vals = self.target_mixer(phi_out + self.main_args.gamma * (1 - expand_terminated) * target_max_na_psi_vals, 
                                                     batch["state"][:, 1:], self.task2decomposer[task])
 
-
         # Subtask mixing: 2.(bs, T-1, 1, d_phi) -> (bs, T-1, 1)
         # weight = self._w_rectify(phi_hat.detach(), rewards, mask, task, t_env, is_online)
         weight = self.mac.explain_task(task)
@@ -203,7 +229,7 @@ class TransferSFLearner:
         loss = td_loss + agent_loss
         
         # CQL: TO handle ood in offRL; may be replaced with qplex
-        if not is_online:
+        if mode == 'offline':
             if self.main_args.cql_type == 'base':
                 agent_qs = (psi_out.transpose(-1, -2) * weight).sum(-1) # (bs, T, n, n_act) 
                 chosen_action_na_qvals = (chosen_action_psi_na_vals * weight).sum(-1)
@@ -216,18 +242,10 @@ class TransferSFLearner:
             loss += self.main_args.cql_alpha * cql_loss
         
         # Optimise
-        if is_online:
-            task_id = self.mac.task2ids[task]
-            optim_id = Adam([task_id], lr=self.lr_w)
-            optim_id.zero_grad()
-            loss.backward()
-            optim_id.step()
-            grad_norm = 0
-        else:
-            self.optimiser.zero_grad()
-            loss.backward()
-            grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.main_args.grad_norm_clip)
-            self.optimiser.step()
+        self.optimiser.zero_grad()
+        loss.backward()
+        grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.main_args.grad_norm_clip)
+        self.optimiser.step()
         self.total_training_steps += 1
         self.task2train_info[task]["training_steps"] += 1
 
@@ -244,7 +262,7 @@ class TransferSFLearner:
             # self.logger.log_stat(f"{task}/psi_td_loss", psi_td_loss.item(), t_env)
             mask_elems = mask.sum().item()
             # self.logger.log_stat(f"{task}/td_error_abs", (masked_td_error.abs().sum().item()/mask_elems), t_env)
-            if not is_online:
+            if mode == 'offline':
                 self.logger.log_stat(f"{task}/cql_loss", cql_loss.item(), t_env)
             self.logger.log_stat(f"{task}/q_taken_mean", (chosen_action_qvals * mask).sum().item()/(mask_elems * n_agents), t_env)
             self.logger.log_stat(f"{task}/target_mean", (targets * mask).sum().item()/(mask_elems * n_agents), t_env)

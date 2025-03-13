@@ -320,7 +320,7 @@ class SC2Decomposer:
         attack_action_info = action_info[:, self.n_actions_no_attack:self.n_actions_no_attack + self.n_enemies]
     
         # recover shape
-        no_attack_action_info = no_attack_action_info.reshape(*shape[:-1], self.n_actions_no_attack)    
+        no_attack_action_info = no_attack_action_info.reshape(*shape[:-1], self.n_actions_no_attack) # FIXME should be reshape(..., -1), notice this
         attack_action_info = attack_action_info.reshape(*shape[:-1], self.n_enemies)
         
         # get compact action

@@ -12,7 +12,7 @@ class AttnFeatureExtractor(nn.Module):
     '''
     def __init__(self, task2input_shape_info,
                  task2decomposer, task2n_agents,
-                 surrogate_decomposer, args):
+                 surrogate_decomposer, args): # TODO diff obs & obs_action inputs
         super().__init__()
         self.args = args
         self.entity_embed_dim = args.entity_embed_dim
@@ -24,7 +24,8 @@ class AttnFeatureExtractor(nn.Module):
             for task in task2input_shape_info
         }
         self.have_attack_action = (surrogate_decomposer.n_actions != surrogate_decomposer.n_actions_no_attack)
-        
+        self.state_last_action, self.state_timestep_number = surrogate_decomposer.state_last_action, surrogate_decomposer.state_timestep_number
+
         ## get obs shape information
         match self.args.env:
             case "sc2":
@@ -33,29 +34,56 @@ class AttnFeatureExtractor(nn.Module):
                     surrogate_decomposer.aligned_obs_nf_en,
                     surrogate_decomposer.aligned_obs_nf_al,
                 )
-                n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-                wrapped_obs_own_dim = (
-                    obs_own_dim + self.args.id_length + n_actions_no_attack + 1
+                state_en_dim, state_al_dim = (
+                    surrogate_decomposer.state_nf_en,
+                    surrogate_decomposer.state_nf_al,
                 )
+                wrapped_obs_own_dim = obs_own_dim + self.args.id_length
                 ## enemy_obs ought to add attack_action_infos
                 obs_en_dim += 1
             case "gymma":
                 obs_own_dim, obs_en_dim, obs_al_dim = surrogate_decomposer.own_obs_dim, surrogate_decomposer.obs_nf_en, surrogate_decomposer.obs_nf_al
-                n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-                wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack + 1 # see the decomposers
+                state_en_dim, state_al_dim = surrogate_decomposer.state_nf_en, surrogate_decomposer.state_nf_al
+                wrapped_obs_own_dim = obs_own_dim + self.args.id_length
                 ## enemy_obs ought to add attack_action_infos
                 obs_en_dim += surrogate_decomposer.n_actions_attack
             case _:
                 raise NotImplementedError
 
+        n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
+        if self.args.obs_last_action:
+            wrapped_obs_own_dim += n_actions_no_attack + 1
+
+        if self.state_last_action:
+            state_al_dim += self.n_actions_no_attack + 1
+
         assert self.attn_embed_dim % self.args.head == 0
+        # obs self-attention modules
         self.query = nn.Linear(wrapped_obs_own_dim, self.attn_embed_dim * self.args.head)
         self.ally_key = nn.Linear(obs_al_dim, self.attn_embed_dim * self.args.head)
         self.ally_value = nn.Linear(obs_al_dim, self.entity_embed_dim * self.args.head)
         self.enemy_key = nn.Linear(obs_en_dim, self.attn_embed_dim * self.args.head)
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim * self.args.head)
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim * self.args.head)
-        
+        # inverse dynamic predictor
+        self.na_action_layer = nn.Sequential(
+            nn.Linear(self.entity_embed_dim * self.args.head * 6, self.args.rnn_hidden_dim),
+            nn.LeakyReLU(),
+            nn.Linear(self.args.rnn_hidden_dim, n_actions_no_attack)
+        )
+        # self.na_action_layer = nn.Linear(self.entity_embed_dim * self.args.head * 6, n_actions_no_attack)
+        self.attack_action_layer = nn.Sequential(
+            nn.Linear(self.args.rnn_hidden_dim + self.entity_embed_dim * self.args.head * 6, self.args.rnn_hidden_dim),
+            nn.LeakyReLU(),
+            nn.Linear(self.args.rnn_hidden_dim, 1)
+        )
+        # self.attack_action_layer = nn.Linear(self.args.rnn_hidden_dim + self.entity_embed_dim * self.args.head * 6, 1)
+        self.enemy_embed = nn.Sequential( # NOTE it has a different semantic with that in ValueModule
+            nn.Linear(obs_en_dim, self.args.rnn_hidden_dim),
+            nn.LeakyReLU(),
+            nn.Linear(self.args.rnn_hidden_dim, self.args.rnn_hidden_dim)
+        )
+
     def _multi_head_attention(self, q, k, v, attn_dim):
         """
             q: [bs*n_agents, attn_dim*n_heads]
@@ -81,17 +109,20 @@ class AttnFeatureExtractor(nn.Module):
 
     def _attention(self, q, k, v, attn_dim):
         """
-            q: [bs*n_agents, attn_dim]
+            q: [bs*n_agents, (query_len), attn_dim]
             k: [bs*n_agents, n_entity, attn_dim]
             v: [bs*n_agents, n_entity, value_dim]
         """
         assert self.args.head == 1
-        energy = th.bmm(q.unsqueeze(1), k.transpose(1, 2))/(attn_dim ** (1 / 2))
+        if len(q.shape) == 2:
+            q = q.unsqueeze(1)
+        energy = th.bmm(q, k.transpose(1, 2))/(attn_dim ** (1 / 2))
         score = F.softmax(energy, dim=-1)
         out = th.bmm(score, v).squeeze(1)
         return out
-    
-    def forward(self, inputs, task):
+
+    def _get_attn_feature(self, inputs, task):
+        # inputs == obs: (bsn, d)
         task_decomposer = self.task2decomposer[task]
         task_n_agents = self.task2n_agents[task]
         last_action_shape = self.task2last_action_shape[task]
@@ -145,7 +176,106 @@ class AttnFeatureExtractor(nn.Module):
         attn_feature = th.cat([own_feature, ally_feature, enemy_feature], dim=-1)
 
         return attn_feature, enemy_feats
-        
+
+    # def _state_rep(self, states, obs, task):
+    #     '''
+    #     Represent obs with state: o^i_t = O^i(s_t) as common in Dec-POMDP
+    #     states: (bsT, d)
+    #     obs: (bsT, n, d)
+    #     '''
+    #     decomposer = self.task2decomposer[task]
+    #     bst, n_agents, _ = obs.size()
+    #     n_enemies = decomposer.n_enemies
+    #     n_entities = n_agents + n_enemies
+
+    #     agent_states, enemy_states, last_action_states, _ = decomposer.decompose_state(states)
+    #     agent_states = th.stack(agent_states, dim=0) # [n_agents, bsT, state_nf_al]
+    #     enemy_states = th.stack(enemy_states, dim=0).permute(1, 0, 2) # [n_enemies, bsT, state_nf_en]
+
+    #     if self.state_last_action:
+    #         last_action_states = th.stack(last_action_states, dim=0) # (n_agents, bsT, n_actions)
+    #         _, _, last_compact_action_states = decomposer.decompose_action_info(last_action_states)
+    #         agent_states = th.cat([agent_states, last_compact_action_states], dim=-1)
+
+    #     agent_embed = self.agent_enc(agent_states).permute(1, 0, 2)
+    #     enemy_embed = self.enemy_enc(enemy_states)
+    #     entity_embed = th.cat([agent_embed, enemy_embed], dim=1) # [bsT, n_entity, entity_embed_dim]
+
+    #     # encode with self-attention
+    #     entity_query = self.state_query(entity_embed)
+    #     entity_key = self.state_key(entity_embed)
+    #     entity_value = self.state_value(entity_embed)
+
+    #     if self.args.head == 1:
+    #         state_attn_feature = self._attention(entity_query, entity_key, entity_value, self.attn_embed_dim)
+    #     else:
+    #         state_attn_feature = self._multi_head_attention(entity_query, entity_key, entity_value, self.attn_embed_dim)
+    #     # mean pooling over entity
+    #     state_attn_feature = state_attn_feature.mean(dim=1) # (bsT, entity_embed_dim)
+    #     state_kv_in = th.cat([state_attn_feature.unsqueeze(1).repeat(1, n_agents, 1),
+    #                              agent_embed], dim=-1) # (bsT, n_agents, 2d)
+    #     # state_query = self.ca_state_query(state_query_in) # (bsT, n_agents, d_attn)
+    #     state_key = self.ca_state_key(state_kv_in)
+    #     state_value = self.ca_state_value(state_kv_in)
+
+    #     obs = obs.reshape(bst * n_agents, -1)
+    #     obs_attn_feature, _ = self._get_attn_feature(obs, task) # (bsTn, 3d)
+    #     obs_attn_feature = obs_attn_feature.reshape(bst, n_agents, -1)
+    #     obs_query = self.ca_obs_query(obs_attn_feature)
+    #     # obs_key = self.ca_obs_key(obs_attn_feature)
+    #     # obs_value = self.ca_obs_value(obs_attn_feature) # (bsT, n_agents, d)
+
+    #     if self.args.head == 1:
+    #         state_rep = self._attention(obs_query, state_key, state_value, self.attn_embed_dim)
+    #     else:
+    #         state_rep = self._multi_head_attention(obs_query, state_key, state_value, self.attn_embed_dim)
+
+    #     return state_rep, enemy_states
+
+    def invdyn_forward(self, states, obs, next_states, next_obs, task):
+        # /> with state
+        # state_rep, enemy_states = self._state_rep(states, obs, task)
+        # next_states_rep, _ = self._state_rep(next_states, next_obs, task)
+        # action_pred_in = th.cat([state_rep, next_states_rep], dim=-1) # (bsT, n, 2d)
+        # </ with state
+        # /> wo state
+        bst, n_agents, _ = obs.size()
+        obs = obs.reshape(bst * n_agents, -1)
+        next_obs = next_obs.reshape(bst * n_agents, -1)
+        obs_attn_feature, enemy_states = self._get_attn_feature(obs, task) # (bsTn, 3d)
+        next_obs_attn_feature, _ = self._get_attn_feature(next_obs, task)
+        action_pred_in = th.cat(
+            [
+                obs_attn_feature.reshape(bst, n_agents, -1),
+                next_obs_attn_feature.reshape(bst, n_agents, -1),
+            ],
+            dim=-1,
+        )  # (bsT, n, 6d)
+        # </ wo state
+
+        na_action_pred = self.na_action_layer(action_pred_in)
+        if self.have_attack_action:
+            enemy_feature = self.enemy_embed(enemy_states) # (bsT, n_enemy, hid)
+            attack_action_input = th.cat(
+                [
+                    enemy_feature,
+                    action_pred_in.unsqueeze(1).repeat(1, enemy_states.size(1), 1)
+                ],
+                dim=-1
+            ) # (bs, n_enemy, hid+2d)
+            attack_action_pred = self.attack_action_layer(attack_action_input).squeeze(-1) # TODO need debug
+            action_pred = th.cat([na_action_pred, attack_action_pred], dim=-1)
+        else:
+            action_pred = na_action_pred
+
+        action_pred = F.softmax(action_pred, dim=-1)
+
+        return action_pred
+
+    def forward(self, inputs, task):
+        attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
+        return attn_feature, enemy_feats
+
 class ValueModule(nn.Module):
     '''
     compute psi|Q value based on 
@@ -173,6 +303,12 @@ class ValueModule(nn.Module):
         self.rnn = nn.GRUCell(self.entity_embed_dim * self.args.head * 3, self.args.rnn_hidden_dim)
 
         ## attack action networks
+        # self.psi = FCNet(self.hidden_dim + self.n_actions_no_attack, self.phi_dim, hidden_layer=2)
+        self.no_attack_psi = nn.Sequential(
+            nn.Linear(self.hidden_dim + self.n_actions_no_attack, 2 * self.args.rnn_hidden_dim),
+            nn.LeakyReLU(),
+            nn.Linear(2 * self.args.rnn_hidden_dim, self.phi_dim),
+        )
         self.attack_action_layer_psi = nn.Sequential(
             nn.Linear(2 * self.args.rnn_hidden_dim, 2 * self.args.rnn_hidden_dim),
             nn.LeakyReLU(),
@@ -183,7 +319,6 @@ class ValueModule(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(self.args.rnn_hidden_dim, self.args.rnn_hidden_dim)
         )
-        self.psi = FCNet(self.hidden_dim + self.n_actions_no_attack, self.phi_dim, hidden_layer=2)
     
     def forward(self, attn_feature, enemy_feats, hidden_state):
         h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
@@ -192,7 +327,7 @@ class ValueModule(nn.Module):
         psi_input = h.unsqueeze(1).repeat(1, self.n_actions_no_attack, 1) # (bsn, n_no_attack, hid)
         id_action_no_attack = self.id_action_no_attack.repeat(h.size(0), 1, 1)
         psi_input = th.cat([psi_input, id_action_no_attack], dim=-1)
-        wo_action_psi = self.psi(psi_input) # (bsn, n_no_attack, d_phi)
+        wo_action_psi = self.no_attack_psi(psi_input) # (bsn, n_no_attack, d_phi)
         loss = 0
         loss_info = {}
         
@@ -211,7 +346,7 @@ class ValueModule(nn.Module):
             psi = wo_action_psi
 
         return h, psi, loss, loss_info
-    
+
 class TaskHead(nn.Module):
     '''
     compute w via | multitask regression | -task weight explainer-
@@ -268,26 +403,16 @@ class TrSFRNNAgent(nn.Module):
         # make hidden states on the same device as model
         return th.zeros(1, self.args.rnn_hidden_dim, device=self.args.device)
 
-    def pretrain_forward(self, inputs, hidden_state, task, task_weight):
-        bsn = inputs.shape[0]
-        n_agents = self.task2n_agents[task]
-        bs = bsn // n_agents
-        attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
-        h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
-        h = self.rnn(attn_feature, h_in)
-        task_emb = self._task_enc(task_weight.unsqueeze(0)).repeat(h.shape[0], 1) # (bsn, hid)
-        # psi_input = th.cat([h, task_emb], dim=-1).reshape(bs, n_agents, -1)
-        psi_input = h.reshape(bs, n_agents, -1)
-        psi_hid, loss, loss_info = self.skill_enc(psi_input)
-
-        return h, loss, loss_info
+    def pretrain_forward(self, states, obs, next_states, next_obs, task):
+        action_pred = self.attn_enc.invdyn_forward(states, obs, next_states, next_obs, task)
+        return action_pred
     
-    def forward(self, inputs, hidden_state, task, task_id, test_mode=False): # psi forward
+    def forward(self, inputs, hidden_state, task): # psi forward
         n_agents = self.task2n_agents[task]
         bs = inputs.shape[0] // n_agents
         attn_feature, enemy_feats = self.attn_enc(inputs, task)
         
-        phi = th.matmul(attn_feature, self.fixed_phi).view(bs, n_agents, -1).clamp(-0.1, 0.1)
+        phi = th.matmul(attn_feature, self.fixed_phi).view(bs, n_agents, -1).clamp(-0.1, 0.1) # TODO param proj; or modify phi_dim
         h, psi, loss, loss_info = self.value(attn_feature, enemy_feats, hidden_state)
         
         # psi: (bsn, n_act, d_phi) -> (bsn, d_phi, n_act) -> (bs, n, d_phi, n_act)
@@ -307,7 +432,7 @@ class TrSFRNNAgent(nn.Module):
             
             online: update policy head;
             
-            fewshot: update only task weight head;
+            adapt: update only task weight head;
             
         Args:
             mode (str): agent running mode.
@@ -316,7 +441,7 @@ class TrSFRNNAgent(nn.Module):
         """        
         # CHECK 试一下不同的参数冻结方法
         mode = mode.lower()
-        assert mode in ['pretrain', 'offline', 'online', 'fewshot']
+        assert mode in ['pretrain', 'offline', 'online', 'adapt']
         modules = [self.attn_enc, self.value, self.task_explainer]
         match mode:
             case 'pretrain':
@@ -325,12 +450,14 @@ class TrSFRNNAgent(nn.Module):
                 grad_set = [True, True, True]
             case 'online':
                 grad_set = [False, True, True]
-            case 'fewshot':
+            case 'adapt':
                 grad_set = [False, False, True]
                 
         for g_set, module in zip(grad_set, modules):
             for param in module.parameters():
                 param.require_grad = g_set
+                
+        print(f"Model in [{mode}] training mode.")
 
 class FCNet(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_layer=1, hidden_dim=1024, use_leaky_relu=True, use_last_activ=False):
@@ -352,4 +479,3 @@ class FCNet(nn.Module):
             
     def forward(self, x):
         return self.layers(x)
-    
