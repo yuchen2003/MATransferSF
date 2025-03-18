@@ -16,7 +16,7 @@ runner_log_interval: 100
 learner_log_interval: 100
 
 # update the target network every {} episodes
-target_update_interval_or_tau: 0.01
+target_update_interval_or_tau: 0.005
 
 # learner />
 agent_output_type: "q" # regard psi as q's
@@ -58,6 +58,9 @@ agent: "tr_sf_rnn"
 
 # mac
 mac: "tr_basic_mac"
+
+standardise_returns: False
+standardise_rewards: True
 
 # params about observation decomposition
 id_length: 4

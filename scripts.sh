@@ -1,3 +1,29 @@
+curl https://p.nju.edu.cn/api/portal/v1/login -X POST -d'{"username":"211240066","password":"caqjew-tufhas-0piFce"}'
+// "args": [
+//     "--online",
+//     "--config=qmix",
+//     "--env-config=gymma",
+//     "--seed=1",
+//     "--t_max=40500",
+//     "--use_wandb=False",
+// ],
+// "args": [
+//     "--offline",
+//     "--config=bc",
+//     "--env-config=sc2_offline",
+//     "--seed=1",
+//     "--t_max=40500",
+//     "--use_wandb=False",
+// ],
+// "args": [
+//     "--mto",
+//     "--config=mt_qmix_cql",
+//     "--env-config=gymma_offline",
+//     "--task-config=lbf_test",
+//     "--seed=1",
+//     "--use_wandb=False",
+// ]
+
 CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=expert --num_episodes_collected=4000 --stop_return=0.9 --seed=1 with env_args.time_limit=50 env_args.key=lbforaging:Foraging-5x5-2p-3f-coop-v2 &
 CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=expert --num_episodes_collected=4000 --stop_return=0.9 --seed=1 with env_args.time_limit=50 env_args.key=lbforaging:Foraging-5x5-3p-3f-coop-v2 &
 CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=expert --num_episodes_collected=4000 --stop_return=0.9 --seed=1 with env_args.time_limit=50 env_args.key=lbforaging:Foraging-5x5-4p-2f-coop-v2 &
@@ -177,32 +203,25 @@ CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-co
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="invdyn pretrain stability" &
 wait
 #* OK.
+#* 0314-143006但是现在更长的训练(18w steps)将出现loss大幅上涨到一个平台，之后(22w)恢复正常loss，原因未知。还有0314-105349
+
 CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="invdyn pretrain more param"
 #* 但是增加action head的参数就会造成梯度消失
 #* 更少参数（单层线性层）收敛到次优
+#* 尝试向phi模块增加参数，参考transformer的设计，拓展attention后映射模块，但**去掉所有残差链接**，性能最好，并且稳定。有趣的是，不同的几种phi_gen设计在pretrain阶段展示出相同的loss曲线形状（波动等）
+#* 以上对比0312-234144; 0314-105349; 0314-111314
+#* phi_gen后训练效果：(1. 0314-140954：Adam后训练, 2. 0314-143006：Adam从头训练, 3. 0314-144620：SGD后训练)
+#* Adam出现loss暴涨后恢复，SGD没有出现loss大幅上涨的情况，SGD略好于Adam，但总体都没有提升
 
-curl https://p.nju.edu.cn/api/portal/v1/login -X POST -d'{"username":"211240066","password":"caqjew-tufhas-0piFce"}'
-// "args": [
-//     "--online",
-//     "--config=qmix",
-//     "--env-config=gymma",
-//     "--seed=1",
-//     "--t_max=40500",
-//     "--use_wandb=False",
-// ],
-// "args": [
-//     "--offline",
-//     "--config=bc",
-//     "--env-config=sc2_offline",
-//     "--seed=1",
-//     "--t_max=40500",
-//     "--use_wandb=False",
-// ],
-// "args": [
-//     "--mto",
-//     "--config=mt_qmix_cql",
-//     "--env-config=gymma_offline",
-//     "--task-config=lbf_test",
-//     "--seed=1",
-//     "--use_wandb=False",
-// ]
+#* 不同seed又出现之前那种意外性能的情况
+#? pretrain seed和offline seed一致性？
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="invdyn pretrain seed 2" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="invdyn pretrain seed 3" &
+wait
+#* 良性泛化下的w能保持较低的方差，即比较固定
+#* w_explainer不太靠谱，应该有很严重的过拟合：
+#! 如果不用r信号学习w，则退化为模仿学习，此时有相当于行为策略的性能
+
+
+#? 从target_mean和Qmean上看，可能发生了保守估计问题
+#* 似乎seed的选取比架构和cqlalpha超参的选取都大

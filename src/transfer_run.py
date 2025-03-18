@@ -190,15 +190,26 @@ def run_sequential(args, logger):
 
     # single mac, single learner and multiple task runner & config
     mac = mac_REGISTRY[main_args.mac](all_tasks, train_tasks, trans_tasks, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
-    # mac = mac_REGISTRY[main_args.mac](all_tasks, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
 
-    learner = le_REGISTRY[main_args.learner](mac, logger, main_args)
+    match args.ckpt_stage:
+        case 0:
+            train_mode = 'pretrain'
+        case 1:
+            train_mode = 'offline'
+        case 2:
+            train_mode = 'online'
+        case 3:
+            train_mode = 'adapt'
+        case _:
+            raise ValueError
+
+    learner = le_REGISTRY[main_args.learner](mac, logger, main_args, train_mode)
     if main_args.use_cuda:
         learner.cuda()
     
     for task in all_tasks: 
         task2runner[task].setup(scheme=task2scheme[task], groups=task2groups[task], preprocess=task2preprocess[task], mac=mac)
-
+        
     model_path = None
     if main_args.checkpoint_path != "":
         timesteps = []
@@ -249,9 +260,8 @@ def run_sequential(args, logger):
     # =======================
     if args.ckpt_stage == 0:
         pretrain_steps = args.pretrain_steps
-        logger.console_logger.info("Beginning upsupervised pretraining for {} timesteps".format(pretrain_steps))
+        logger.console_logger.info("Beginning pretraining for {} timesteps".format(pretrain_steps))
         
-        mac.agent.set_train_mode('pretrain')
         pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, pretrain_steps)
         
         logger.console_logger.info(f"Finished Pretraining.")
@@ -263,10 +273,9 @@ def run_sequential(args, logger):
         offline_train_steps = args.offline_train_steps
         logger.console_logger.info("Beginning multi-task offline training for {} timesteps".format(offline_train_steps))
         
-        mac.agent.set_train_mode('offline')
         train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, train_steps=offline_train_steps, mode='offline')
             
-        logger.console_logger.info(f"Finished Training.")
+        logger.console_logger.info(f"Finished offline training.")
 
     # =======================
     #  Online Transfer Stage
@@ -288,7 +297,6 @@ def run_sequential(args, logger):
         online_train_steps = args.online_train_steps
         logger.console_logger.info("Beginning online training for {} timesteps".format(online_train_steps))
         
-        mac.agent.set_train_mode('online')
         trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=online_train_steps)
         
         logger.console_logger.info(f"Finished online learning.")
@@ -297,10 +305,18 @@ def run_sequential(args, logger):
     #  Task Adaptation Only
     # =======================
     if args.ckpt_stage == 3:
+        for task in trans_tasks: # test only adaptation with FEW data collected
+            task2offline_buffer[task] = OfflineBuffer(
+                args=main_args,
+                map_name=task,
+                quality=main_args.train_tasks_data_quality[task],
+                data_path=main_args.tasks_offline_bottom_data_paths[task],
+                max_buffer_size=main_args.offline_max_buffer_size,
+                shuffle=main_args.offline_data_shuffle,
+            )
         adapt_steps = args.adapt_steps
         logger.console_logger.info("Beginning task adaptation for {} timesteps".format(adapt_steps))
         
-        mac.agent.set_train_mode('adapt')
         train_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, adapt_steps, mode='adapt')
         
         logger.console_logger.info(f"Finished task adaptation.")

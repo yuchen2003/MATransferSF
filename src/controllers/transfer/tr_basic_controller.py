@@ -2,8 +2,10 @@ from modules.agents import REGISTRY as agent_REGISTRY
 from modules.decomposers import REGISTRY as decomposer_REGISTRY
 from components.action_selectors import REGISTRY as action_REGISTRY
 import torch as th
+import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
+from components.standarize_stream import RunningMeanStd
 
 class TrBasicMAC:
     def __init__(self, all_tasks, train_tasks, trans_tasks, task2scheme, task2args, main_args):
@@ -66,45 +68,53 @@ class TrBasicMAC:
         
         # build agents
         self.task2input_shape_info = self._get_input_shape()
-        self._build_agents(self.task2input_shape_info, len(self.train_tasks))
-        self.task2ids = {}        
+        self._build_agents(self.task2input_shape_info, len(train_tasks), len(trans_tasks))
         self.phi_dim = self.agent.phi_dim
-        train_task_ids = th.eye(len(self.train_tasks), dtype=th.float32, device=main_args.device)
-        for task in self.trans_tasks:
-            self.task2ids.update({task: th.zeros_like(train_task_ids[0], requires_grad=True)})
+        # self.task2ids = {}     
+        # for i, task in enumerate(all_tasks):
+        #     self.task2ids.update({task: i})
+        # train_task_ids = th.eye(len(self.train_tasks), dtype=th.float32, device=main_args.device)
+        # for task in self.trans_tasks:
+        #     unseen_task_id = nn.Parameter(th.randn_like(train_task_ids[0]))
+        #     self.task2ids.update({task: unseen_task_id})
             
-        for i, task in enumerate(self.train_tasks):
-            self.task2ids.update({task: train_task_ids[i].clone()})
+        # for i, task in enumerate(self.train_tasks):
+        #     self.task2ids.update({task: train_task_ids[i].clone()})
+        
+        self.task2weight_ms: dict[str, RunningMeanStd] = {}
+        for task in self.task2args.keys():
+            self.task2weight_ms[task] = RunningMeanStd(shape=(self.phi_dim, ), device=main_args.device)
             
         self.hidden_states = None
 
     def select_actions(self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False): # for execution
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = []
-        cur_w = self.explain_task(task)
+        # cur_w = self.explain_task(task)
+        cur_w = self.task2weight_ms[task].mean
         psi = self.forward(ep_batch, t_ep, task)[1]
-        psi = psi.transpose(-1, -2)
+        # psi = psi.transpose(-1, -2)
         agent_outputs = (psi * cur_w).sum(-1)
 
         chosen_actions = self.action_selector.select_action(agent_outputs[bs], avail_actions[bs], t_env, test_mode=test_mode)
         
         return chosen_actions
 
-    def pretrain_forward(self, states, obs, next_states, next_obs, task):
+    def pretrain_forward(self, obs, next_obs, task):
         bs, seq_len, n_agents = obs.shape[:3]
-        states = self._build_flat(states)
         obs = self._build_flat(obs)
-        next_states = self._build_flat(next_states)
         next_obs = self._build_flat(next_obs)
-        action_pred = self.agent.pretrain_forward(states, obs, next_states, next_obs, task).reshape(bs, seq_len, n_agents, -1)
+        action_pred = self.agent.pretrain_forward(obs, next_obs, task).reshape(bs, seq_len, n_agents, -1)
         return action_pred
     
     def forward(self, ep_batch, t, task): # for training offline|online
         # NOTE online forward: train the same psi network for unseen task weights
         agent_inputs = self._build_inputs(ep_batch, t, task)
+        obs = ep_batch["obs"][:, t]
+        obs = obs.reshape(-1, obs.shape[-1])
         
-        self.hidden_states, phi, psi, loss, loss_info = self.agent(agent_inputs, self.hidden_states, task)
-        # psi: (bs, n, d_phi, n_act)
+        self.hidden_states, phi, psi = self.agent(obs, agent_inputs, self.hidden_states, task)
+        # psi: (bs, n, n_act, d_phi)
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":
@@ -130,11 +140,11 @@ class TrBasicMAC:
                     # Zero out the unavailable actions, which have been softmax.
                     psi[avail_actions == 0] = 0.0
         
-        return phi, psi, loss, loss_info
+        return phi, psi
 
-    def explain_task(self, task):
-        task_id = self.task2ids[task]
-        return self.agent.explain_task(task_id)
+    # def explain_task(self, task):
+    #     task_id = self.task2ids[task]
+    #     return self.agent.explain_task(task_id)
     
     def init_hidden(self, batch_size, task):
         self.hidden_states = self.agent.init_hidden().expand(batch_size * self.task2n_agents[task], -1)
@@ -149,13 +159,15 @@ class TrBasicMAC:
         self.agent.cuda()
 
     def save_models(self, path):
-        th.save(self.agent.state_dict(), "{}/agent.th".format(path))
+        # th.save(self.agent.state_dict(), "{}/agent.th".format(path))
+        self.agent.save(path)
 
     def load_models(self, path):
-        self.agent.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
+        # self.agent.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
+        self.agent.load(path)
 
-    def _build_agents(self, task2input_shape_info, n_train_task):
-        self.agent = agent_REGISTRY[self.main_args.agent](task2input_shape_info, n_train_task,
+    def _build_agents(self, task2input_shape_info, n_train_task, trans_task):
+        self.agent = agent_REGISTRY[self.main_args.agent](task2input_shape_info, n_train_task, trans_task,
                                                           self.task2decomposer, self.task2n_agents,
                                                           self.surrogate_decomposer, self.main_args)
 

@@ -2,9 +2,9 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MTQMixer(nn.Module):
+class MTQattnMixer(nn.Module):
     def __init__(self, surrogate_decomposer, main_args):
-        super(MTQMixer, self).__init__()
+        super(MTQattnMixer, self).__init__()
         self.main_args = main_args
         self.embed_dim = main_args.mixing_embed_dim
         self.attn_embed_dim = main_args.attn_embed_dim
@@ -46,12 +46,12 @@ class MTQMixer(nn.Module):
             hypernet_embed = self.main_args.hypernet_embed
             self.hyper_w_1 = nn.Sequential(
                 nn.Linear(entity_mixing_input_dim, hypernet_embed),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.Linear(hypernet_embed, self.embed_dim),
             )
             self.hyper_w_final = nn.Sequential(
                 nn.Linear(mixing_input_dim, hypernet_embed),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.Linear(hypernet_embed, self.embed_dim),
             )
         elif getattr(main_args, "hypernet_layers", 1) > 2:
@@ -64,13 +64,13 @@ class MTQMixer(nn.Module):
 
         # V(s) instead of a bias for the last layers
         self.V = nn.Sequential(nn.Linear(mixing_input_dim, self.embed_dim),
-                               nn.ReLU(),
+                               nn.LeakyReLU(),
                                nn.Linear(self.embed_dim, 1))
     
-    def forward(self, agent_qs, states, task_decomposer, r_mode=False):
-        # agent_qs: [batch_size, seq_len, n_agents]
+    def forward(self, agent_qs, states, task_decomposer):
+        # agent_qs: [batch_size, seq_len, n_agents, d_phi]
         # states: [batch_size, seq_len, state_dim]
-        bs, seq_len, n_agents = agent_qs.size()
+        bs, seq_len, n_agents, phi_dim = agent_qs.size()
         n_enemies = task_decomposer.n_enemies
         n_entities = n_agents + n_enemies
 
@@ -112,19 +112,23 @@ class MTQMixer(nn.Module):
                                        ally_embed.permute(1, 2, 0, 3)], dim=-1) # (bs, seq_len, n_agents, x)
         mixing_input = out
 
-        w1 = th.abs(self.hyper_w_1(entity_mixing_input)) 
-        b1 = self.hyper_b_1(mixing_input) 
+        # w1 = F.softmax(self.hyper_w_1(entity_mixing_input), dim=-1) 
+        # w1 = w1.view(-1, n_agents, self.embed_dim) # (bs * seq_len, n_agents, x)
+        w1 = th.abs(self.hyper_w_1(entity_mixing_input))
+        b1 = self.hyper_b_1(mixing_input)
         w1 = w1.view(-1, n_agents, self.embed_dim) # (bs * seq_len, n_agents, x)
         b1 = b1.view(-1, 1, self.embed_dim) # (bs * seq_len , 1, x)
-        agent_qs = agent_qs.view(-1, 1, n_agents) # (bs*seq_len, 1, n_agents)
-        hidden = F.elu(th.bmm(agent_qs, w1) + b1) # (bs*seq_len, 1, x)
+        agent_qs = agent_qs.permute(0, 1, 3, 2).view(-1, phi_dim, n_agents) # (bs*seq_len, phi_dim, n_agents)
+        hidden = F.elu(th.bmm(agent_qs, w1)) # (bs*seq_len, phi_dim, x); Q^h
+        # hidden = F.tanh(th.bmm(agent_qs, w1)) # (bs*seq_len, phi_dim, x); Q^h
 
         # Second layer
         w_final = th.abs(self.hyper_w_final(mixing_input)).view(-1, self.embed_dim, 1) # (bs*seq_len, x, 1)
         v = self.V(mixing_input).view(-1, 1, 1)
         
         # Compute final output
-        y = th.bmm(hidden, w_final) + v # (bs*seq_len, 1, 1)
+        y = th.bmm(hidden, w_final) + v # (bs*seq_len, phi_dim, 1)
 
-        q_tot = y.view(bs, -1, 1)
+        q_tot = y.view(bs, -1, phi_dim, 1) # (bs, seq_len, d_phi, 1)
+        q_tot = q_tot.permute(0, 1, 3, 2)  # (bs, seq_len, 1, d_phi)
         return q_tot

@@ -68,7 +68,7 @@ class OfflineBufferH5(): # One Task
         self.h5_paths = []
         for final_data_path in self.data_path_list:
             self.h5_paths.extend([os.path.join(final_data_path, f) for f in sorted(os.listdir(final_data_path)) if f.endswith(".h5")])
-        print(self.h5_paths)
+        # print(self.h5_paths)
         #self.h5_paths = [os.path.join(self.data_path, f) for f in os.listdir(self.data_path)]
 
         self.max_buffer_size = 100000000 if max_buffer_size <= 0 else max_buffer_size

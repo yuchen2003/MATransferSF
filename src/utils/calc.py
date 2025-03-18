@@ -13,13 +13,13 @@ def compute_q_values(rewards, discount_factor=0.99):
 
     return q_values
 
-def count_total_parameters(model: th.nn.Module, prefix=''):
+def count_total_parameters(model: th.nn.Module, prefix='', is_concrete=False):
     n_total = sum(param.numel() for param in model.parameters())
-    n_trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
-    print("Model Parameter Stats:")
-    print(f"Trainable: {n_trainable:,}, Total: {n_total:,}")
-    print("=" * 80)
-    for name, param in model.named_parameters(prefix=prefix):
-        print(f"{param.numel():,} \t parameters -> {name}")
-    print("=" * 80)
+    print(f"Total: {n_total:,}")
+    if is_concrete:
+        print("Model Parameter Stats:")
+        print("=" * 80)
+        for name, param in model.named_parameters(prefix=prefix):
+            print(f"{param.numel():,}\tparameters -> {name}")
+        print("=" * 80)
     
