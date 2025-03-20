@@ -6,27 +6,6 @@ import torch.nn.functional as F
 from utils.embed import polynomial_embed, binary_embed, onehot_embed
 from utils.calc import count_total_parameters
 
-class FCNet(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_layer=2, hidden_dim=512, use_leaky_relu=True, use_last_activ=False):
-        super().__init__()
-        if use_leaky_relu:
-            self.activ = nn.LeakyReLU()
-        else:
-            self.activ = nn.ReLU()
-            
-        layers = [nn.Linear(in_dim, hidden_dim), self.activ]
-        for l in range(hidden_layer - 1):
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), self.activ])
-        layers.append(nn.Linear(hidden_dim, out_dim))
-        
-        if use_last_activ:
-            layers.append(self.activ)
-            
-        self.layers = nn.Sequential(*layers)
-            
-    def forward(self, x):
-        return self.layers(x)
-
 class AttnFeatureExtractor(nn.Module):
     '''
     phi|feature extraction module, based on attention mechanism
@@ -132,7 +111,7 @@ class AttnFeatureExtractor(nn.Module):
         assert energy.shape[0] == bs * self.args.head and energy.shape[1] == 1
         # shape[2] == n_entity
         score = F.softmax(energy, dim=-1)
-        score = th.bmm(score, v).view(bs, self.args.head, 1, self.entity_embed_dim) # (bs*head, 1, entity_embed_dim) 
+        out = th.bmm(score, v).view(bs, self.args.head, 1, self.entity_embed_dim) # (bs*head, 1, entity_embed_dim) 
         out = out.transpose(1, 2).contiguous().view(bs, 1, self.entity_embed_dim * self.args.head).squeeze(1)
         return out
 
@@ -215,10 +194,7 @@ class AttnFeatureExtractor(nn.Module):
 
     # Only for RL train
     def attn_forward(self, inputs, task): 
-        # attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
-        # return attn_feature, enemy_feats
-        feature, enemy_feat = self.feature_forward(inputs, task)
-        return feature, enemy_feat
+        return self.feature_forward(inputs, task)
 
     # Only for pretrain
     def invdyn_forward(self, obs, next_obs, task):
@@ -330,7 +306,7 @@ class TaskHead(nn.Module):
     '''
     compute w via | multitask regression | -task weight explainer-
     '''
-    def __init__(self, n_train_task, args, hidden_dim=64, dropout_rate=0.2):
+    def __init__(self, n_train_task, args, hidden_dim=128, dropout_rate=0.2):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_train_task, hidden_dim),
@@ -338,12 +314,10 @@ class TaskHead(nn.Module):
             nn.Dropout(dropout_rate),
             nn.Linear(hidden_dim, args.rnn_hidden_dim),
             # nn.Tanh(),
-            nn.Softmax(dim=-1),
+            # nn.Softmax(dim=-1),
         )
-        self.task_emb = th.eye(n_train_task, dtype=th.float32, device=args.device)
         
     def forward(self, task_id: th.Tensor):
-        task_id = self.task_emb[task_id]
         eps = (th.randn_like(task_id) * 0.1).clamp(-0.1, 0.1)
         task_id = (task_id + eps).clamp(0, 1)
         # return 0.5 * (self.net(task_id) + 1)
@@ -351,7 +325,7 @@ class TaskHead(nn.Module):
 
 
 class TrSFRNNAgent(nn.Module):
-    def __init__(self, task2input_shape_info, n_train_task, n_trans_task, 
+    def __init__(self, task2input_shape_info, n_train_task, train_mode,
                  task2decomposer, task2n_agents,
                  surrogate_decomposer, args) -> None:
         super(TrSFRNNAgent, self).__init__()
@@ -362,8 +336,6 @@ class TrSFRNNAgent(nn.Module):
         self.task2decomposer = task2decomposer
         self.task2n_agents = task2n_agents
         self.args = args
-        self.n_train_task = n_train_task
-        self.n_trans_task = n_trans_task
         self.have_attack_action = (surrogate_decomposer.n_actions != surrogate_decomposer.n_actions_no_attack)
 
         # define various dimension information
@@ -380,16 +352,12 @@ class TrSFRNNAgent(nn.Module):
         self.phi_gen = AttnFeatureExtractor(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args, is_for_pretrain=True)
         self.attn_enc = AttnFeatureExtractor(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args)
         self.value = ValueModule(surrogate_decomposer, args)
-        # self.task_emb = nn.Embedding(n_train_task + n_trans_task, n_train_task)
+        self.task_explainer = TaskHead(n_train_task, args)
         
-        # self.task_explainer = TaskHead(n_train_task + n_trans_task, args)
-
-        print("phi generator:")
-        count_total_parameters(self.phi_gen)
-        print("attention encoder:")
-        count_total_parameters(self.attn_enc)
-        print("value/psi module:")
-        count_total_parameters(self.value)
+        self.set_train_mode(train_mode)
+        
+        for module in [self.phi_gen, self.attn_enc, self.value, self.task_explainer]:
+            count_total_parameters(module)
         print("Agent: ")
         count_total_parameters(self, is_concrete=True)
 
@@ -411,15 +379,13 @@ class TrSFRNNAgent(nn.Module):
         h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state)
         
         # psi: (bsn, n_act, d_phi) -> (bsn, d_phi, n_act) -> (bs, n, d_phi, n_act)
-        # psi = psi.transpose(1, 2).view(bs, n_agents, self.phi_dim, -1)
-        
-        # psi: (bsn, n_act, d_phi) -> (bs, n, n_act, d_phi)
         psi = psi.view(bs, n_agents, -1, self.phi_dim)
+        # psi = psi.transpose(1, 2).view(bs, n_agents, self.phi_dim, -1)
 
         return h, phi, psi
         
-    # def explain_task(self, task_id):
-    #     return self.task_explainer(task_id)
+    def explain_task(self, task_id):
+        return self.task_explainer(task_id)
         
     def set_train_mode(self, mode):
         """ Set the training or evaluation mode of the agent. mode=
@@ -435,29 +401,30 @@ class TrSFRNNAgent(nn.Module):
         Args:
             mode (str): agent running mode.
             
-        Return: parameters to train
+        Return: None
         """        
+        mode = mode.lower()
         assert mode in ['pretrain', 'offline', 'online', 'adapt']
+        modules = [self.phi_gen, self.attn_enc, self.value, self.task_explainer]
+        match mode:
+            case 'pretrain':
+                grad_set = [True, False, False, False]
+            case 'offline': 
+                grad_set = [False, True, True, True]
+            case 'online':
+                grad_set = [False, False, True, True] # CHECK or FTTT
+            case 'adapt':
+                grad_set = [False, False, False, True]
+                
+        for g_set, module in zip(grad_set, modules):
+            for param in module.parameters():
+                param.require_grad = g_set
+                
         print(f"Model in [{mode}] training mode.")
         self.mode = mode
         
-        modules = [self.phi_gen, self.attn_enc, self.value]
-        match mode:
-            case 'pretrain':
-                grad_set = [True, False, False]
-            case 'offline': 
-                grad_set = [False, True, True]
-            case 'online':
-                grad_set = [False, False, True] # CHECK or FTTF
-            case 'adapt': 
-                grad_set = [False, False, False]
-        
-        for g_set, module in zip(grad_set, modules):
-            for param in module.parameters():
-                param.requires_grad = g_set
-        
-    def parameters(self):
-        return filter(lambda p: p.requires_grad, super().parameters())
+    def parameters(self, recurse: bool = True):
+        return filter(lambda p: p.requires_grad, super().parameters(recurse))
         
     def save(self, path):
         assert self.mode in ['pretrain', 'offline', 'online', 'adapt']
@@ -474,3 +441,24 @@ class TrSFRNNAgent(nn.Module):
                 self.phi_gen.load_state_dict(th.load("{}/phi_gen.th".format(path), map_location=lambda storage, loc: storage))
             case _: # can be `eval` mode 
                 self.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
+
+class FCNet(nn.Module):
+    def __init__(self, in_dim, out_dim, hidden_layer=2, hidden_dim=512, use_leaky_relu=True, use_last_activ=False):
+        super().__init__()
+        if use_leaky_relu:
+            self.activ = nn.LeakyReLU()
+        else:
+            self.activ = nn.ReLU()
+            
+        layers = [nn.Linear(in_dim, hidden_dim), self.activ]
+        for l in range(hidden_layer - 1):
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), self.activ])
+        layers.append(nn.Linear(hidden_dim, out_dim))
+        
+        if use_last_activ:
+            layers.append(self.activ)
+            
+        self.layers = nn.Sequential(*layers)
+            
+    def forward(self, x):
+        return self.layers(x)

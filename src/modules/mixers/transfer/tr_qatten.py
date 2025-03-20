@@ -2,9 +2,9 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MTQattnMixer(nn.Module):
+class MTQMixer(nn.Module):
     def __init__(self, surrogate_decomposer, main_args):
-        super(MTQattnMixer, self).__init__()
+        super(MTQMixer, self).__init__()
         self.main_args = main_args
         self.embed_dim = main_args.mixing_embed_dim
         self.attn_embed_dim = main_args.attn_embed_dim
@@ -76,40 +76,41 @@ class MTQattnMixer(nn.Module):
 
         # get decomposed state information
         ally_states, enemy_states, last_action_states, timestep_number_state = task_decomposer.decompose_state(states)
-        ally_states = th.stack(ally_states, dim=0)  # [n_agents, bs, seq_len, state_nf_al]
-        enemy_states = th.stack(enemy_states, dim=0)  # [n_enemies, bs, seq_len, state_nf_en]
+        ally_states = th.stack(ally_states, dim=2)  # [bs, seq_len, n_agents, state_nf_al]
+        enemy_states = th.stack(enemy_states, dim=2)  # [bs, seq_len, n_enemies, state_nf_en]
 
         # stack action information
         if self.state_last_action:
-            last_action_states = th.stack(last_action_states, dim=0) # (n_agents, bs, seq_len, n_actions)
+            last_action_states = th.stack(last_action_states, dim=2) # (bs, seq_len, n_agents, n_actions)
             _, _, last_compact_action_states = task_decomposer.decompose_action_info(last_action_states)
             ally_states = th.cat([ally_states, last_compact_action_states], dim=-1)
-        
+
         # do inference and get entity_embed
-        ally_embed = self.ally_encoder(ally_states) # [n_agents, bs, seq_len, entity_embed_dim]
+        ally_embed = self.ally_encoder(ally_states) # [bs, seq_len, n_agents, entity_embed_dim]
         enemy_embed = self.enemy_encoder(enemy_states)
 
         # we ought to do self-attention
-        entity_embed = th.cat([ally_embed, enemy_embed], dim=0) # [n_entity, bs, seq_len, entity_embed_dim]
+        entity_embed = th.cat([ally_embed, enemy_embed], dim=2) # [bs, seq_len, n_entity, entity_embed_dim]
 
         # do attention
-        proj_query = self.query(entity_embed).permute(1, 2, 0, 3).reshape(bs * seq_len, n_entities, self.attn_embed_dim)
-        proj_key = self.key(entity_embed).permute(1, 2, 0, 3).reshape(bs * seq_len, n_entities, self.attn_embed_dim)
+        proj_query = self.query(entity_embed).reshape(bs * seq_len, n_entities, self.attn_embed_dim)
+        proj_key = self.key(entity_embed).reshape(bs * seq_len, n_entities, self.attn_embed_dim)
         energy = th.bmm(proj_query, proj_key.transpose(1, 2)) / (self.attn_embed_dim ** (1 / 2))
         score = F.softmax(energy, dim=-1) # (bs*seq_len, n_entities, n_entities)
-        proj_value = entity_embed.permute(1, 2, 0, 3).reshape(bs * seq_len, n_entities, self.entity_embed_dim)
+        proj_value = entity_embed.reshape(bs * seq_len, n_entities, self.entity_embed_dim)
         out = th.bmm(score, proj_value) # (bs * seq_len, n_entities, entity_embed_dim)
-        # mean pooling over entity 
+        # mean pooling over entity
         out = out.mean(dim=1).reshape(bs, seq_len, self.entity_embed_dim)
 
         # concat timestep information
         if self.state_timestep_number:
             raise Exception(f"Not Implemented")
-        else:
-            pass
-        
-        entity_mixing_input = th.cat([out.unsqueeze(2).repeat(1, 1, n_agents, 1),
-                                       ally_embed.permute(1, 2, 0, 3)], dim=-1) # (bs, seq_len, n_agents, x)
+
+        entity_mixing_input = th.cat(
+            [out.unsqueeze(2).repeat(1, 1, n_agents, 1), 
+             ally_embed], 
+            dim=-1
+        )  # (bs, seq_len, n_agents, x)
         mixing_input = out
 
         # w1 = F.softmax(self.hyper_w_1(entity_mixing_input), dim=-1) 
@@ -120,7 +121,6 @@ class MTQattnMixer(nn.Module):
         b1 = b1.view(-1, 1, self.embed_dim) # (bs * seq_len , 1, x)
         agent_qs = agent_qs.permute(0, 1, 3, 2).view(-1, phi_dim, n_agents) # (bs*seq_len, phi_dim, n_agents)
         hidden = F.elu(th.bmm(agent_qs, w1)) # (bs*seq_len, phi_dim, x); Q^h
-        # hidden = F.tanh(th.bmm(agent_qs, w1)) # (bs*seq_len, phi_dim, x); Q^h
 
         # Second layer
         w_final = th.abs(self.hyper_w_final(mixing_input)).view(-1, self.embed_dim, 1) # (bs*seq_len, x, 1)
@@ -132,3 +132,4 @@ class MTQattnMixer(nn.Module):
         q_tot = y.view(bs, -1, phi_dim, 1) # (bs, seq_len, d_phi, 1)
         q_tot = q_tot.permute(0, 1, 3, 2)  # (bs, seq_len, 1, d_phi)
         return q_tot
+    

@@ -189,8 +189,6 @@ def run_sequential(args, logger):
     task2buffer_scheme = { task: task2buffer[task].scheme for task in all_tasks }
 
     # single mac, single learner and multiple task runner & config
-    mac = mac_REGISTRY[main_args.mac](all_tasks, train_tasks, trans_tasks, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
-
     match args.ckpt_stage:
         case 0:
             train_mode = 'pretrain'
@@ -202,8 +200,9 @@ def run_sequential(args, logger):
             train_mode = 'adapt'
         case _:
             raise ValueError
+    mac = mac_REGISTRY[main_args.mac](all_tasks, train_tasks, trans_tasks, train_mode, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
 
-    learner = le_REGISTRY[main_args.learner](mac, logger, main_args, train_mode)
+    learner = le_REGISTRY[main_args.learner](mac, logger, main_args)
     if main_args.use_cuda:
         learner.cuda()
     
@@ -305,15 +304,6 @@ def run_sequential(args, logger):
     #  Task Adaptation Only
     # =======================
     if args.ckpt_stage == 3:
-        for task in trans_tasks: # test only adaptation with FEW data collected
-            task2offline_buffer[task] = OfflineBuffer(
-                args=main_args,
-                map_name=task,
-                quality=main_args.train_tasks_data_quality[task],
-                data_path=main_args.tasks_offline_bottom_data_paths[task],
-                max_buffer_size=main_args.offline_max_buffer_size,
-                shuffle=main_args.offline_data_shuffle,
-            )
         adapt_steps = args.adapt_steps
         logger.console_logger.info("Beginning task adaptation for {} timesteps".format(adapt_steps))
         

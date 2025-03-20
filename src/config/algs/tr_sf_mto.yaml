@@ -20,32 +20,19 @@ double_q: True
 # mixer: tr_dmaq_qatten # NOTE vdn(tr_vdn), vdn-with-bias, 1-qmix(tr_qatten), qplex(tr_dmaq_qatten)
 mixer: tr_dmaq_qatten
 task_emb_std: 0.1
-cql_alpha: 1.0 # largely depend on the quality of dataset
+cql_alpha: 1. # largely depend on the quality of dataset
 cql_type: "base"
 
+# qmix
 mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
-mixing_head: 4
-mask_dead: False
-attend_reg_coef: 0.001
-weighted_head: False
-
-# params about mt inputs mixing network
-entity_embed_dim: 64
-attn_embed_dim: 8
-head: 1
-
-# params about observation decomposition
-id_length: 4
-max_agent: 15
 
 # ckpt_stage: 0
-# optim_type: "sgd"
-# lr: 0.005 # 0.005 -> 0.0001
-# pretrain_batch_size: 32 # 32 -> 8
-# pretrain_steps: 100005 # 100005 -> cont
+# lr: 0.005 # 0.005 -> 0.0005
 # checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2025-03-14_13-49-55/models/pretrain
+# pretrain_batch_size: 32 # 32 -> 8
+# pretrain_steps: 500005 # 100005 -> cont
 # load_step: 100005
 # test_interval: 5000
 # log_interval: 5000
@@ -53,27 +40,24 @@ max_agent: 15
 # learner_log_interval: 5000
 
 ckpt_stage: 1
+checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2025-03-14_13-49-55/models/pretrain
+load_step: 100005
 offline_train_steps: 50005
-# checkpoint_path: 
-# load_step: 
-test_interval: 1000
-log_interval: 1000
-runner_log_interval: 1000
-learner_log_interval: 1000
+test_interval: 500
+log_interval: 500
+runner_log_interval: 500
+learner_log_interval: 500
 
 # ckpt_stage: 2
-# online_train_steps: 10005
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_2_tr_sf_2025-03-19_22-05-55/models/offline
+# load_step: 50005
+online_train_steps: 10005
+# test_interval: 500
+# log_interval: 500
+# runner_log_interval: 500
+# learner_log_interval: 500
 
-# ckpt_stage: 3
-# optim_type: "sgd"
-# lr: 1
-# adapt_steps: 1005
-# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_3_tr_sf_2025-03-15_10-45-21/models/offline
-# load_step: 40011
-# test_interval: 100
-# log_interval: 100
-# runner_log_interval: 100
-# learner_log_interval: 100
+adapt_steps: 10005
 
 # </ learner
 
@@ -86,5 +70,14 @@ mac: "tr_basic_mac"
 
 standardise_returns: False
 standardise_rewards: True
+
+# params about observation decomposition
+id_length: 4
+max_agent: 15
+
+# params about mt mixing network
+entity_embed_dim: 64
+attn_embed_dim: 8
+head: 1
 
 name: "tr_sf"

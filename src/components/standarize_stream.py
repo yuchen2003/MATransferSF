@@ -44,37 +44,3 @@ class RunningMeanStd(object):
         self.mean = new_mean
         self.var = new_var
         self.count = new_count
-        
-class RunningMean(object):
-    def __init__(self, epsilon: float = 1e-4, shape: Tuple[int, ...] = (), device="cpu"):
-
-        self.mean = torch.zeros(shape, dtype=torch.float32, device=device)
-        self.count = epsilon
-        
-    def update(self, arr):
-        arr = arr.reshape(-1, arr.size(-1))
-        batch_mean = torch.mean(arr, dim=0)
-        batch_count = arr.shape[0]
-        
-        delta = batch_mean - self.mean
-        tot_count = self.count + batch_count
-        new_mean = self.mean + delta * batch_count / tot_count
-        new_count = batch_count + self.count
-        
-        self.mean = new_mean
-        self.count = new_count
-    
-class EMAMean(object):
-    def __init__(self, beta=0.95, shape: Tuple[int, ...] = (), device="cpu"):
-        self.beta = beta
-        self.mean = torch.zeros(shape, dtype=torch.float32, device=device)
-        self.first = True
-
-    def update(self, arr):
-        arr = arr.reshape(-1, arr.size(-1))
-        batch_mean = torch.mean(arr, dim=0)
-        if self.first:
-            self.mean = batch_mean
-        else:
-            self.mean = self.beta * self.mean + (1 - self.beta) * batch_mean
-        

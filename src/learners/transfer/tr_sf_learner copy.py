@@ -35,7 +35,7 @@ class TransferSFLearner:
         self.lambda_r = 1
         self.lambda_l1 = 1 # not sensitive
 
-        self.mixer = MTDMAQQattnMixer(self.surrogate_decomposer, main_args)
+        self.mixer = None
         if main_args.mixer is not None:
             match main_args.mixer:
                 case "tr_vdn":
@@ -131,7 +131,7 @@ class TransferSFLearner:
         # (bs, T, n, n_act) -> (bs, T, n, d_phi, n_act) ~ psi_out
         expand_avail_actions = avail_actions.unsqueeze(3).repeat(1, 1, 1, self.phi_dim, 1)
         # (bs, T, 1) -> (bs, T, 1, d_phi)
-        expand_terminated = terminated.repeat(1, 1, n_agents)
+        expand_terminated = terminated.unsqueeze(3).repeat(1, 1, 1, self.phi_dim)
 
         if self.main_args.standardise_rewards:
             # NOTE phi is calculated by the encoder
@@ -139,7 +139,6 @@ class TransferSFLearner:
             rewards = (rewards - self.task2rew_ms[task].mean) / th.sqrt(self.task2rew_ms[task].var)
         
         weight = self.mac.explain_task(task)
-        # self.mac.task2weight_ms[task].update(weight)
         # Calculate estimated Q-Values -> psi-values, Q-values
         phi_out, psi_out = [], []
         self.mac.init_hidden(batch.batch_size, task)
@@ -149,14 +148,11 @@ class TransferSFLearner:
             psi_out.append(psi)
         phi_out = th.stack(phi_out, dim=1)[:, :-1] # (bs, T-1, n, d_phi)
         psi_out = th.stack(psi_out, dim=1) # (bs, T, n, d_phi, n_act) 
-        
-        reward_na_vals = (phi_out.detach() * weight).sum(-1)
-        mac_out = (psi_out * weight.detach()).sum(-1) # (bs, T, n, n_act)
-        mac_out[avail_actions == 0] = -9999999
-        # max_action_qvals = mac_out[:, :-1].max(dim=3)[0]
 
+        psi_out[expand_avail_actions == 0] = -9999999
         # Pick the Q-Values for the actions taken by each agent
-        chosen_action_na_qvals = th.gather(mac_out[:, :-1], dim=3, index=actions).squeeze(3) # (bs, T-1, n)
+        # (bs, T, n, d_phi)
+        chosen_action_psi_na_vals = th.gather(psi_out[:, :-1], dim=-1, index=expand_actions).squeeze(-1)
 
         # Calculate the Q-Values necessary for the target
         target_psi_out = []
@@ -164,55 +160,45 @@ class TransferSFLearner:
         for t in range(batch.max_seq_length):
             _, target_psi = self.target_mac.forward(batch, t=t, task=task)
             target_psi_out.append(target_psi)
+            
         # We don't need the first timesteps Q-Value estimate for calculating targets
-        target_psi_out = th.stack(target_psi_out[1:], dim=1) # (bs, T-1, n, n_act, d_phi)
-        target_mac_out = (target_psi_out * weight).sum(-1)
-
+        target_psi_out = th.stack(target_psi_out[1:], dim=1) # (bs, T-1, n, d_phi, n_act)
+        
         # Mask out unavailable actions
-        target_mac_out[avail_actions[:, 1:] == 0] = -9999999
-        # target_max_action_qvals = target_mac_out.max(dim=3)[0]
+        target_psi_out[expand_avail_actions[:, 1:] == 0] = -9999999
 
         # Max over target Q-Values
         if self.main_args.double_q:
             # Get actions that maximise live Q (for double q-learning)
-            mac_out_detach = mac_out.clone().detach()
-            # mac_out_detach[avail_actions == 0] = -9999999 already done before
-            cur_max_actions = mac_out_detach.max(dim=3, keepdim=True)[1]
-            target_max_na_qvals = th.gather(target_mac_out, 3, cur_max_actions[:, 1:]).squeeze(3)
-            # cons_max_qvals = th.gather(mac_out, 3, cur_max_actions).squeeze(3)
+            psi_out_detach = psi_out.clone().detach()
+            expand_cur_max_actions = psi_out_detach.max(dim=4, keepdim=True)[1] # (bs, T, n, d_phi, 1)
+            target_max_na_psi_vals = th.gather(target_psi_out, 4, expand_cur_max_actions[:, 1:]).squeeze(4) # (bs, T-1, n, d_phi)
         else:
-            target_max_na_qvals = target_mac_out.max(dim=3)[0]
+            target_max_na_psi_vals = target_psi_out.max(dim=4)[0]
 
         # NOTE these two mixing can exchange, equivalent if with linear agent mixing
-        # Agent mixing: (bs, T-1, n) -> (bs, T-1, 1)
-        chosen_action_qvals = self.mixer(
-            chosen_action_na_qvals,
-            batch["state"][:, :-1],
-            self.task2decomposer[task],
-        )
-        target_max_qvals = self.target_mixer(
-            reward_na_vals + self.main_args.gamma * (1 - expand_terminated) * target_max_na_qvals,
-            batch["state"][:, 1:],
-            self.task2decomposer[task],
-        )
-        
-        next_target_qvals = self.target_mixer(
-            (1 - expand_terminated) * target_max_na_qvals,
-            batch["state"][:, 1:],
-            self.task2decomposer[task],
-        )
-        
-        reward_hat = target_max_qvals - self.main_args.gamma * next_target_qvals
-        r_loss = th.square((reward_hat - rewards)).mean()
+        # Agent mixing: 1.(bs, T-1, n, d_phi) -> (bs, T-1, 1, d_phi)
+        if self.mixer is not None:
+            chosen_action_psi_vals = self.mixer(chosen_action_psi_na_vals, batch["state"][:, :-1], self.task2decomposer[task])
+            target_max_psi_vals = self.target_mixer(
+                phi_out + self.main_args.gamma * (1 - expand_terminated) * target_max_na_psi_vals, 
+                batch["state"][:, 1:], self.task2decomposer[task]
+            )
 
+        # Subtask mixing: 2.(bs, T-1, 1, d_phi) -> (bs, T-1, 1)
+        # weight = self._w_rectify(phi_hat.detach(), rewards, mask, task, t_env, is_online)
+        
+        
+        chosen_action_qvals = (chosen_action_psi_vals * weight).sum(-1)
+        target_max_qvals = (target_max_psi_vals * weight).sum(-1)
+        
         if self.main_args.standardise_returns:
             target_max_qvals = target_max_qvals * th.sqrt(self.task2ret_ms[task].var) + self.task2ret_ms[task].mean
-
-        # Calculate 1-step Q-Learning targets
-        # CHECK use rewards or reward_hat(Eq.6 in ZSRL...) ?
-        # targets = rewards + self.main_args.gamma * (1 - terminated) * target_max_qvals # (bs, T-1, 1)
-        targets = target_max_qvals
         
+        # Calculate 1-step Q-Learning targets
+        # targets = rewards + self.main_args.gamma * (1 - terminated) * target_max_qvals #(bs, T-1, 1)
+        targets = target_max_qvals
+
         if self.main_args.standardise_returns:
             self.task2ret_ms[task].update(targets)
             targets = (targets - self.task2ret_ms[task].mean) / th.sqrt(self.task2ret_ms[task].var)
@@ -227,14 +213,15 @@ class TransferSFLearner:
         # Normal L2 loss, take mean over actual data (1, 2.1)
         td_loss = (masked_td_error ** 2).sum() / mask.sum()
 
-        loss = td_loss + r_loss
+        loss = td_loss
         
         # CQL: TO handle ood in offRL; may be replaced with qplex
-        cql_loss = th.zeros(1)
         if mode == 'offline':
             if self.main_args.cql_type == 'base':
+                agent_qs = (psi_out.transpose(-1, -2) * weight).sum(-1) # (bs, T, n, n_act) 
+                chosen_action_na_qvals = (chosen_action_psi_na_vals * weight).sum(-1)
                 # CQL-error
-                cql_error = th.logsumexp(mac_out[:, :-1], dim=3) - chosen_action_na_qvals
+                cql_error = th.logsumexp(agent_qs[:, :-1], dim=3) - chosen_action_na_qvals
                 cql_mask = mask.expand_as(cql_error)
                 cql_loss = (cql_error * cql_mask).sum() / mask.sum() # better use mask.sum() instead of cql_mask.sum()
             else:
@@ -259,7 +246,6 @@ class TransferSFLearner:
             self.logger.log_stat(f"{task}/loss", loss.item(), t_env)
             self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
             self.logger.log_stat(f"{task}/td_loss", td_loss.item(), t_env)
-            self.logger.log_stat(f"{task}/r_loss", r_loss.item(), t_env)
             # self.logger.log_stat(f"{task}/psi_td_loss", psi_td_loss.item(), t_env)
             mask_elems = mask.sum().item()
             # self.logger.log_stat(f"{task}/td_error_abs", (masked_td_error.abs().sum().item()/mask_elems), t_env)

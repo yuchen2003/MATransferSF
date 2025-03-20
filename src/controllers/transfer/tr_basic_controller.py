@@ -2,16 +2,15 @@ from modules.agents import REGISTRY as agent_REGISTRY
 from modules.decomposers import REGISTRY as decomposer_REGISTRY
 from components.action_selectors import REGISTRY as action_REGISTRY
 import torch as th
-import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-from components.standarize_stream import RunningMeanStd
 
 class TrBasicMAC:
-    def __init__(self, all_tasks, train_tasks, trans_tasks, task2scheme, task2args, main_args):
+    def __init__(self, all_tasks, train_tasks, trans_tasks, train_mode, task2scheme, task2args, main_args):
         self.all_tasks = all_tasks
         self.train_tasks = train_tasks
         self.trans_tasks = trans_tasks
+        self.train_mode = train_mode
         self.task2scheme = task2scheme
         self.task2args = task2args
         self.task2n_agents = {task: self.task2args[task].n_agents for task in all_tasks}
@@ -68,30 +67,22 @@ class TrBasicMAC:
         
         # build agents
         self.task2input_shape_info = self._get_input_shape()
-        self._build_agents(self.task2input_shape_info, len(train_tasks), len(trans_tasks))
+        self._build_agents(self.task2input_shape_info, len(self.train_tasks))
+        self.task2ids = {}        
         self.phi_dim = self.agent.phi_dim
-        # self.task2ids = {}     
-        # for i, task in enumerate(all_tasks):
-        #     self.task2ids.update({task: i})
-        # train_task_ids = th.eye(len(self.train_tasks), dtype=th.float32, device=main_args.device)
-        # for task in self.trans_tasks:
-        #     unseen_task_id = nn.Parameter(th.randn_like(train_task_ids[0]))
-        #     self.task2ids.update({task: unseen_task_id})
+        train_task_ids = th.eye(len(self.train_tasks), dtype=th.float32, device=main_args.device)
+        for task in self.trans_tasks:
+            self.task2ids.update({task: th.zeros_like(train_task_ids[0], requires_grad=True)})
             
-        # for i, task in enumerate(self.train_tasks):
-        #     self.task2ids.update({task: train_task_ids[i].clone()})
-        
-        self.task2weight_ms: dict[str, RunningMeanStd] = {}
-        for task in self.task2args.keys():
-            self.task2weight_ms[task] = RunningMeanStd(shape=(self.phi_dim, ), device=main_args.device)
+        for i, task in enumerate(self.train_tasks):
+            self.task2ids.update({task: train_task_ids[i].clone()})
             
         self.hidden_states = None
 
     def select_actions(self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False): # for execution
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = []
-        # cur_w = self.explain_task(task)
-        cur_w = self.task2weight_ms[task].mean
+        cur_w = self.explain_task(task)
         psi = self.forward(ep_batch, t_ep, task)[1]
         # psi = psi.transpose(-1, -2)
         agent_outputs = (psi * cur_w).sum(-1)
@@ -114,7 +105,7 @@ class TrBasicMAC:
         obs = obs.reshape(-1, obs.shape[-1])
         
         self.hidden_states, phi, psi = self.agent(obs, agent_inputs, self.hidden_states, task)
-        # psi: (bs, n, n_act, d_phi)
+        # psi: (bs, n, d_phi, n_act)
 
         # Softmax the agent outputs if they're policy logits
         if self.agent_output_type == "pi_logits":
@@ -142,9 +133,9 @@ class TrBasicMAC:
         
         return phi, psi
 
-    # def explain_task(self, task):
-    #     task_id = self.task2ids[task]
-    #     return self.agent.explain_task(task_id)
+    def explain_task(self, task):
+        task_id = self.task2ids[task]
+        return self.agent.explain_task(task_id)
     
     def init_hidden(self, batch_size, task):
         self.hidden_states = self.agent.init_hidden().expand(batch_size * self.task2n_agents[task], -1)
@@ -166,8 +157,8 @@ class TrBasicMAC:
         # self.agent.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
         self.agent.load(path)
 
-    def _build_agents(self, task2input_shape_info, n_train_task, trans_task):
-        self.agent = agent_REGISTRY[self.main_args.agent](task2input_shape_info, n_train_task, trans_task,
+    def _build_agents(self, task2input_shape_info, n_train_task):
+        self.agent = agent_REGISTRY[self.main_args.agent](task2input_shape_info, n_train_task, self.train_mode, 
                                                           self.task2decomposer, self.task2n_agents,
                                                           self.surrogate_decomposer, self.main_args)
 

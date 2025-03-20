@@ -19,7 +19,7 @@ def count_total_parameters(model: th.nn.Module, prefix='', is_concrete=False):
     if is_concrete:
         print("Model Parameter Stats:")
         print("=" * 80)
-        for name, param in model.named_parameters(prefix=prefix):
+        for name, param in filter(lambda p: p[1].requires_grad, model.named_parameters(prefix=prefix)):
             print(f"{param.numel():,}\tparameters -> {name}")
         print("=" * 80)
     

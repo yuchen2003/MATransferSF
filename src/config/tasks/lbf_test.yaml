@@ -32,6 +32,6 @@ test_tasks: [ # for mto
   "lbforaging:Foraging-5x5-4p-2f-coop-v2"
 ]
 trans_tasks: [ # for transfer 
-  # "lbforaging:Foraging-5x5-3p-3f-coop-v2",
+  "lbforaging:Foraging-5x5-3p-3f-coop-v2",
   "lbforaging:Foraging-5x5-4p-2f-coop-v2",
 ]

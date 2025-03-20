@@ -222,6 +222,36 @@ wait
 #* w_explainer不太靠谱，应该有很严重的过拟合：
 #! 如果不用r信号学习w，则退化为模仿学习，此时有相当于行为策略的性能
 
-
 #? 从target_mean和Qmean上看，可能发生了保守估计问题
 #* 似乎seed的选取比架构和cqlalpha超参的选取都大
+
+#* QPLEX + w regression新架构
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qplex pretrain" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="qplex pretrain" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="qplex pretrain" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="qplex pretrain" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qplex offline" --checkpoint_path="/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2025-03-18_16-52-43/models/pretrain" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="qplex offline" --checkpoint_path="/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_2_tr_sf_2025-03-18_16-52-43/models/pretrain" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="qplex offline" --checkpoint_path="/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_3_tr_sf_2025-03-18_16-52-43/models/pretrain" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="qplex offline" --checkpoint_path="/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_4_tr_sf_2025-03-18_16-52-43/models/pretrain" &
+wait
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qplex offline phi origin mixer"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qplex offline phi origin mixer w cql"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="phi origin mixer, w cql, no reg"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qplex off simplified"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qplex off simplified r_hat"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qplex off simplified r_hat no std"
+#* 暂时调下来没有用，无性能，可能mixer里面有一些问题
+
+CUDA_VISIBLE_DEVICES=1 python src.attn/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qattn"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qattn param()"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="qattn param() seed 2"
+
+#* 0319-190917 & 0319-180514 等 可验证linear mixer使得phi-mix与q-mix等价；linear, elu, tanh
+
+#* 0319-213933 seed 2能上!! 尽管不清楚原因，可能是改正的tdlearning
+#* linear由于phi和w的值域限制，对值估计不太好；加上nonlinear后值估计又容易高估或是发散（tanh过保守，leaky发散）
+#* r_loss没有什么变化，考虑到对任务id的初始化，w在学习过程中并未起到作用；通过调试观察w值，w取为固定的onehot，与w相关统计量对应，说明并未起作用
