@@ -129,7 +129,7 @@ CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config
 "leaky + period"
 #*leaky影响基本不大，period可以达到加速的效果，并维持每一步都解w的性能；但这些trick都无法根本改进性能，当前（2025-02-16_17-33-07）所表现的有少量过拟合，总体是不良泛化
 
-#* 2.18 phi的数量增加仍然导向与单个phi相近的性能，这可能类似于moe中的专家区分度不大的问题；抛开moe来看，也许能从每个phi head的参数分布角度来看分化度 # TODO ablation
+#* 2.18 phi的数量增加仍然导向与单个phi相近的性能，这可能类似于moe中的专家区分度不大的问题；抛开moe来看，也许能从每个phi head的参数分布角度来看分化度
 "16x32 phi wo w"
 #* 去除w cond将使学习变慢，但4p2f上最终性能更好；使用了w作为轨迹特征的case表现出不稳定或性能大幅下降(skill 8x64; 16x32 with w)
 “pretrain”
@@ -139,9 +139,12 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf --env-config
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="skill 16x32"
 
 "dense 16x32 vs. skill 8x64 vs. skill 16x32 vs. skill 64x16", all wo w
-#* skill相比dense会显著提升4p2f学习速度；而继续增大phi_dim边际效应明显，且可扩展性受限（由于计算方式，phi多时需要复制的张量大小显著增加，这是一个问题;但是尽管显存使用大，计算速度上并没有影响，应该是得益于张量并行运算） #FIXME 之后可能尝试改进；#TODO 另外进行phi_dim比较详细的ablation和分析
+#* skill相比dense会显著提升4p2f学习速度；而继续增大phi_dim边际效应明显，且可扩展性受限（由于计算方式，phi多时需要复制的张量大小显著增加，这是一个问题;但是尽管显存使用大，计算速度上并没有影响，应该是得益于张量并行运算） 
+# 之后可能尝试改进（已改进为更好的架构3.19）；
+# NOTE 另外进行phi_dim比较详细的ablation和分析（3.21一个隐藏维的维度，取决于phigen所提取特征的内容多少）
 
-#TODO 也许直接实现并尝试一下在线微调，仅offline测试的还是离线多任务性能（并且注意对zeroshot任务是**随机初始化w下的性能**，并非求解w之后的性能）；仅求w或同时也微调架构
+# 也许直接实现并尝试一下在线微调，仅offline测试的还是离线多任务性能（并且注意对zeroshot任务是**随机初始化w下的性能**，并非求解w之后的性能）；仅求w或同时也微调架构
+# NOTE(3.21一个通用可泛化的表征才是关键，抛开其进行学习并不是可迁移的学习)
 #? 猜测：之前seed1和3407的case都发生在1phi的情况下，可能对应学到了良泛化的任务域值函数，并且其w是通用的，所以总体性能都好；当前(2-18_152336, 2-18_171920)在4p2f上的性能可能正对应这种情况，但其中的w在相似任务下通用
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="skill 8x64 online"
 
@@ -214,7 +217,7 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-co
 #* Adam出现loss暴涨后恢复，SGD没有出现loss大幅上涨的情况，SGD略好于Adam，但总体都没有提升
 
 #* 不同seed又出现之前那种意外性能的情况
-#? pretrain seed和offline seed一致性？
+#* pretrain seed和offline seed一致性？
 CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="invdyn pretrain seed 2" &
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="invdyn pretrain seed 3" &
 wait
@@ -222,7 +225,7 @@ wait
 #* w_explainer不太靠谱，应该有很严重的过拟合：
 #! 如果不用r信号学习w，则退化为模仿学习，此时有相当于行为策略的性能
 
-#? 从target_mean和Qmean上看，可能发生了保守估计问题
+#* 从target_mean和Qmean上看，可能发生了保守估计问题（值未对齐+架构和任务与cqclalpha可能需要精确微调）
 #* 似乎seed的选取比架构和cqlalpha超参的选取都大
 
 #* QPLEX + w regression新架构
@@ -252,6 +255,32 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-co
 
 #* 0319-190917 & 0319-180514 等 可验证linear mixer使得phi-mix与q-mix等价；linear, elu, tanh
 
-#* 0319-213933 seed 2能上!! 尽管不清楚原因，可能是改正的tdlearning
+#* 0319-213933 seed 2能上!! 尽管不清楚原因，可能是改正的tdlearning，或是 **parameters()相关的实现不正确**, 目前已采用学习过程中进行detach的做法代替
 #* linear由于phi和w的值域限制，对值估计不太好；加上nonlinear后值估计又容易高估或是发散（tanh过保守，leaky发散）
+#? 调一下cql_alpha也许可以控制值发散 # CHECK
 #* r_loss没有什么变化，考虑到对任务id的初始化，w在学习过程中并未起到作用；通过调试观察w值，w取为固定的onehot，与w相关统计量对应，说明并未起作用
+#* unbound weight输出可以减小rloss，但仍然无法进行值对齐；非静态的weight并不是关键因素
+#* 乘性特征很容易发散；考虑类似于MAIL的做法进行特征phi学习 
+CUDA_VISIBLE_DEVICES=1 python src.qplex/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="qplex"
+#* 所有的no cql都学不起来
+#* qplex有多任务和低零泛化性能，有待检验online
+
+#* off2on
+#* gradnorm初期很大，后续迅速降低，应该是由于值对齐
+#* 带eps sched会好一点，有利于探索并增强记忆（简单实验上不显著）
+
+# TODO />
+#* pre阶段学phi(phi可以 **纯CT而不用管DE** ), taskhead (~MATTAR)，考虑r作为弱监督或predhead目标(某种guidance)，而非具体目标（使用attnhead(over agents)+meanpool，或最大互信息等，避免具体的agent sum），但仍然有可能用linear mixer上phi-mix; 
+#* off阶段仅针对phi学习psi值网络和特征提取（注意和phi架构有所不同，额外输入动作）（此时则可能不用考虑拟合reward，mix在psi层面进行），taskhead则固定，或仅加入某种修正项；  
+#! 总的来说，phi是作为reward的一个稠密的代理而被使用
+#* on阶段仅学习psi值部分，但使用真实reward？；
+#* adapt尝试根据MATTAR，设计taskid微调或是其他
+# TODO </
+
+#! /> 关于泛化迁移的一个新的见解
+#* 在新场景或对新数据进行学习不遗忘的一个关键可能在于特征提取的通用性，即零泛化能力（通用表征等），后续不进行学习仍然可以进行使用，只是针对真实奖励进行学习以对齐价值；这一假设需要检验 # CHECK
+#* 作为对比，此前直接将value部分的特征提取层作为phi进行学习有一定的多任务和简单任务的零泛化能力，难一些的任务则无法泛化
+#* TDlearning中使用真实rewards和reward_hat(phi)的区别：后者实际上是一个稠密信号，相比稀疏的rewards（例如LBF），更容易学习；但对于混合数据，reward_hat的大小则应当与r对齐，这是w的作用之一，但本质上还应当是phi与r的对齐，因其属于同一函数空间。专家数据下的phi都对应高奖励，此时无对齐也没问题 
+#! 就这一点来说，该框架可用于IL|IRL与RL，如果具有专家数据则无需真实奖励，否则需要真实奖励对phi进行奖励对齐
+#! 如果这一点可以确证，则能表明SF用于off2on以及更广泛的额可迁移学习的一个全新的解法，并且是十分高效的；这其中的关键则是通用特征phi的学习和构建，以及基于此的psi学习架构和多阶段学习方式；这甚至有可能做到持续学习场景中
+#! </ 关于泛化迁移的一个新的见解

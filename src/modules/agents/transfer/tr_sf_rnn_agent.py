@@ -6,6 +6,126 @@ import torch.nn.functional as F
 from utils.embed import polynomial_embed, binary_embed, onehot_embed
 from utils.calc import count_total_parameters
 
+class TrSFRNNAgent(nn.Module):
+    def __init__(self, task2input_shape_info, n_train_task, train_mode,
+                 task2decomposer, task2n_agents,
+                 surrogate_decomposer, args) -> None:
+        super(TrSFRNNAgent, self).__init__()
+        self.task2last_action_shape = {
+            task: task2input_shape_info[task]["last_action_shape"]
+            for task in task2input_shape_info
+        }
+        self.task2decomposer = task2decomposer
+        self.task2n_agents = task2n_agents
+        self.args = args
+        self.have_attack_action = (surrogate_decomposer.n_actions != surrogate_decomposer.n_actions_no_attack)
+
+        # define various dimension information
+        ## set attributes
+        self.entity_embed_dim = args.entity_embed_dim
+        self.attn_embed_dim = args.attn_embed_dim
+        self.hidden_dim = args.rnn_hidden_dim
+
+        self.phi_dim = args.rnn_hidden_dim
+        # self.fixed_phi = th.randn(3 * self.hidden_dim, self.phi_dim, device=args.device).clamp(-1, 1) # imitate fronzen transformation as in Does Zeroshot RL...
+        self.mode = None
+
+        # define various networks
+        self.phi_gen = AttnFeatureExtractor(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args, is_for_pretrain=True)
+        self.attn_enc = AttnFeatureExtractor(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args)
+        self.value = ValueModule(surrogate_decomposer, args)
+        self.task_explainer = TaskHead(n_train_task, args)
+        
+        self.set_train_mode(train_mode)
+        
+        for module in [self.phi_gen, self.attn_enc, self.value, self.task_explainer]:
+            count_total_parameters(module)
+        print("Agent: ")
+        count_total_parameters(self, is_concrete=True)
+
+    def init_hidden(self):
+        # make hidden states on the same device as model
+        return th.zeros(1, self.args.rnn_hidden_dim, device=self.args.device)
+
+    def pretrain_forward(self, obs, next_obs, task):
+        action_pred = self.phi_gen.invdyn_forward(obs, next_obs, task)
+        return action_pred
+    
+    def forward(self, obs, inputs, hidden_state, task): # psi forward
+        n_agents = self.task2n_agents[task]
+        bs = inputs.shape[0] // n_agents
+        phi, _ = self.phi_gen.feature_forward(obs, task) # NOTE no grad flows back to phi
+        phi = phi.view(bs, n_agents, -1)
+        
+        attn_feature, enemy_feats = self.attn_enc.attn_forward(inputs, task) 
+        if self.mode in ['online', 'adapt']:
+            attn_feature = attn_feature.detach() # TODO may detach here in online mode
+        h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state)
+        
+        # psi: (bsn, n_act, d_phi) -> (bsn, d_phi, n_act) -> (bs, n, d_phi, n_act)
+        psi = psi.view(bs, n_agents, -1, self.phi_dim)
+        # psi = psi.transpose(1, 2).view(bs, n_agents, self.phi_dim, -1)
+
+        return h, phi, psi
+        
+    def explain_task(self, task_id):
+        return self.task_explainer(task_id)
+        
+    def set_train_mode(self, mode):
+        """ Set the training or evaluation mode of the agent. mode=
+        
+            pretrain: update only feature extractor modules;
+            
+            offline: update all modules except task weight head;
+            
+            online: update policy head;
+            
+            adapt: update only task weight head;
+            
+        Args:
+            mode (str): agent running mode.
+            
+        Return: None
+        """        
+        mode = mode.lower()
+        assert mode in ['pretrain', 'offline', 'online', 'adapt']
+        modules = [self.phi_gen, self.attn_enc, self.value, self.task_explainer]
+        match mode:
+            case 'pretrain':
+                grad_set = [True, False, False, False]
+            case 'offline': 
+                grad_set = [False, True, True, True]
+            case 'online':
+                grad_set = [False, False, True, True] # CHECK or FTTT
+            case 'adapt':
+                grad_set = [False, False, False, True]
+                
+        # for g_set, module in zip(grad_set, modules):
+        #     for param in module.parameters():
+        #         param.require_grad = g_set
+                
+        print(f"Model in [{mode}] training mode.")
+        self.mode = mode
+        
+    # def parameters(self, recurse: bool = True):
+    #     return filter(lambda p: p.requires_grad, super().parameters(recurse))
+        
+    def save(self, path):
+        assert self.mode in ['pretrain', 'offline', 'online', 'adapt']
+        match self.mode:
+            case 'pretrain':
+                th.save(self.phi_gen.state_dict(), "{}/phi_gen.th".format(path))
+            case 'offline' | 'online' | 'adapt':
+                th.save(self.state_dict(), "{}/agent.th".format(path))
+        
+    def load(self, path):
+        assert self.mode in ['pretrain', 'offline', 'online', 'adapt'] # NOTE only consider continuing pretraining
+        match self.mode:
+            case 'pretrain' | 'offline':
+                self.phi_gen.load_state_dict(th.load("{}/phi_gen.th".format(path), map_location=lambda storage, loc: storage))
+            case _: # can be `eval` mode 
+                self.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
+
 class AttnFeatureExtractor(nn.Module):
     '''
     phi|feature extraction module, based on attention mechanism
@@ -194,7 +314,10 @@ class AttnFeatureExtractor(nn.Module):
 
     # Only for RL train
     def attn_forward(self, inputs, task): 
-        return self.feature_forward(inputs, task)
+        # attn_feature, enemy_feats = self._get_attn_feature(inputs, task)
+        # return attn_feature, enemy_feats
+        feature, enemy_feat = self.feature_forward(inputs, task)
+        return feature, enemy_feat
 
     # Only for pretrain
     def invdyn_forward(self, obs, next_obs, task):
@@ -322,125 +445,6 @@ class TaskHead(nn.Module):
         task_id = (task_id + eps).clamp(0, 1)
         # return 0.5 * (self.net(task_id) + 1)
         return self.net(task_id)
-
-
-class TrSFRNNAgent(nn.Module):
-    def __init__(self, task2input_shape_info, n_train_task, train_mode,
-                 task2decomposer, task2n_agents,
-                 surrogate_decomposer, args) -> None:
-        super(TrSFRNNAgent, self).__init__()
-        self.task2last_action_shape = {
-            task: task2input_shape_info[task]["last_action_shape"]
-            for task in task2input_shape_info
-        }
-        self.task2decomposer = task2decomposer
-        self.task2n_agents = task2n_agents
-        self.args = args
-        self.have_attack_action = (surrogate_decomposer.n_actions != surrogate_decomposer.n_actions_no_attack)
-
-        # define various dimension information
-        ## set attributes
-        self.entity_embed_dim = args.entity_embed_dim
-        self.attn_embed_dim = args.attn_embed_dim
-        self.hidden_dim = args.rnn_hidden_dim
-
-        self.phi_dim = args.rnn_hidden_dim
-        # self.fixed_phi = th.randn(3 * self.hidden_dim, self.phi_dim, device=args.device).clamp(-1, 1) # imitate fronzen transformation as in Does Zeroshot RL...
-        self.mode = None
-
-        # define various networks
-        self.phi_gen = AttnFeatureExtractor(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args, is_for_pretrain=True)
-        self.attn_enc = AttnFeatureExtractor(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args)
-        self.value = ValueModule(surrogate_decomposer, args)
-        self.task_explainer = TaskHead(n_train_task, args)
-        
-        self.set_train_mode(train_mode)
-        
-        for module in [self.phi_gen, self.attn_enc, self.value, self.task_explainer]:
-            count_total_parameters(module)
-        print("Agent: ")
-        count_total_parameters(self, is_concrete=True)
-
-    def init_hidden(self):
-        # make hidden states on the same device as model
-        return th.zeros(1, self.args.rnn_hidden_dim, device=self.args.device)
-
-    def pretrain_forward(self, obs, next_obs, task):
-        action_pred = self.phi_gen.invdyn_forward(obs, next_obs, task)
-        return action_pred
-    
-    def forward(self, obs, inputs, hidden_state, task): # psi forward
-        n_agents = self.task2n_agents[task]
-        bs = inputs.shape[0] // n_agents
-        phi, _ = self.phi_gen.feature_forward(obs, task) # NOTE no grad flows back to phi
-        phi = phi.view(bs, n_agents, -1)
-        
-        attn_feature, enemy_feats = self.attn_enc.attn_forward(inputs, task)
-        h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state)
-        
-        # psi: (bsn, n_act, d_phi) -> (bsn, d_phi, n_act) -> (bs, n, d_phi, n_act)
-        psi = psi.view(bs, n_agents, -1, self.phi_dim)
-        # psi = psi.transpose(1, 2).view(bs, n_agents, self.phi_dim, -1)
-
-        return h, phi, psi
-        
-    def explain_task(self, task_id):
-        return self.task_explainer(task_id)
-        
-    def set_train_mode(self, mode):
-        """ Set the training or evaluation mode of the agent. mode=
-        
-            pretrain: update only feature extractor modules;
-            
-            offline: update all modules except task weight head;
-            
-            online: update policy head;
-            
-            adapt: update only task weight head;
-            
-        Args:
-            mode (str): agent running mode.
-            
-        Return: None
-        """        
-        mode = mode.lower()
-        assert mode in ['pretrain', 'offline', 'online', 'adapt']
-        modules = [self.phi_gen, self.attn_enc, self.value, self.task_explainer]
-        match mode:
-            case 'pretrain':
-                grad_set = [True, False, False, False]
-            case 'offline': 
-                grad_set = [False, True, True, True]
-            case 'online':
-                grad_set = [False, False, True, True] # CHECK or FTTT
-            case 'adapt':
-                grad_set = [False, False, False, True]
-                
-        for g_set, module in zip(grad_set, modules):
-            for param in module.parameters():
-                param.require_grad = g_set
-                
-        print(f"Model in [{mode}] training mode.")
-        self.mode = mode
-        
-    def parameters(self, recurse: bool = True):
-        return filter(lambda p: p.requires_grad, super().parameters(recurse))
-        
-    def save(self, path):
-        assert self.mode in ['pretrain', 'offline', 'online', 'adapt']
-        match self.mode:
-            case 'pretrain':
-                th.save(self.phi_gen.state_dict(), "{}/phi_gen.th".format(path))
-            case 'offline' | 'online' | 'adapt':
-                th.save(self.state_dict(), "{}/agent.th".format(path))
-        
-    def load(self, path):
-        assert self.mode in ['pretrain', 'offline', 'online', 'adapt'] # NOTE only consider continuing pretraining
-        match self.mode:
-            case 'pretrain' | 'offline':
-                self.phi_gen.load_state_dict(th.load("{}/phi_gen.th".format(path), map_location=lambda storage, loc: storage))
-            case _: # can be `eval` mode 
-                self.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
 
 class FCNet(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_layer=2, hidden_dim=512, use_leaky_relu=True, use_last_activ=False):

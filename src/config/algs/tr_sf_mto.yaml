@@ -18,7 +18,7 @@ agent_output_type: "q" # regard psi as q's
 learner: "tr_sf_learner"
 double_q: True
 # mixer: tr_dmaq_qatten # NOTE vdn(tr_vdn), vdn-with-bias, 1-qmix(tr_qatten), qplex(tr_dmaq_qatten)
-mixer: tr_dmaq_qatten
+mixer: tr_qatten
 task_emb_std: 0.1
 cql_alpha: 1. # largely depend on the quality of dataset
 cql_type: "base"

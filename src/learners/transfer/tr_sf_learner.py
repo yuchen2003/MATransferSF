@@ -16,6 +16,7 @@ class TransferSFLearner:
     def __init__(self, mac, logger, main_args) -> None:
         self.main_args = main_args
         self.mac = mac
+        self.train_mode = mac.train_mode
         self.logger = logger
 
         self.task2args = mac.task2args
@@ -24,16 +25,8 @@ class TransferSFLearner:
         self.task2decomposer = mac.task2decomposer
 
         self.params = list(mac.parameters())
-        self.num_ep_w = 100
-        self.lr_w = 0.01
-        self.offline_train_steps = main_args.offline_train_steps
-        self.online_train_steps = main_args.t_max
         self.phi_dim = main_args.rnn_hidden_dim
         self.last_weight = None
-        
-        # loss weights
-        self.lambda_r = 1
-        self.lambda_l1 = 1 # not sensitive
 
         self.mixer = MTDMAQQattnMixer(self.surrogate_decomposer, main_args)
         if main_args.mixer is not None:
@@ -282,6 +275,7 @@ class TransferSFLearner:
                 self.last_weight = weight
             self.logger.log_stat(f"{task}/weight_tvd", .5 * (weight - self.last_weight).abs().sum().item(), t_env)
             self.last_weight = weight
+            self.logger.log_stat(f"{task}/weight_actv", .5 * weight.argmax().item(), t_env)
 
             self.task2train_info[task]["log_stats_t"] = t_env
         

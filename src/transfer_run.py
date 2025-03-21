@@ -410,7 +410,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             if episode_sample.device != main_args.device:
                 episode_sample.to(main_args.device)
             
-            learner.train(episode_sample, t_env, episode, task, mode) # TODO 改下名finetune --- is_online
+            learner.train(episode_sample, t_env, episode, task, mode)
             # print(t_env)
             t_env += 1
             episode += batch_size_run
