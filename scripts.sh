@@ -215,6 +215,10 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-co
 #* 以上对比0312-234144; 0314-105349; 0314-111314
 #* phi_gen后训练效果：(1. 0314-140954：Adam后训练, 2. 0314-143006：Adam从头训练, 3. 0314-144620：SGD后训练)
 #* Adam出现loss暴涨后恢复，SGD没有出现loss大幅上涨的情况，SGD略好于Adam，但总体都没有提升
+#* 但sgd对完整训练和后训练都没什么帮助
+#* Adam下lr设的很小不会有太大影响，0.001足够
+#* 小batch小lr下学习稳定，推测可能是出现了泛化困难和灾难性遗忘问题：模型初期能学习到可泛化表征，过训练使模型过拟合到部分困难样本并大幅遗忘之前的表征（学习率较大但loss曲面平坦，尽管如此，仍存在许多局部最优解）
+#* lr <= 0.001, bs <= 32
 
 #* 不同seed又出现之前那种意外性能的情况
 #* pretrain seed和offline seed一致性？
@@ -270,12 +274,58 @@ CUDA_VISIBLE_DEVICES=1 python src.qplex/main.py --transfer --config=tr_sf_mto --
 #* 带eps sched会好一点，有利于探索并增强记忆（简单实验上不显著）
 
 # TODO />
-#* pre阶段学phi(phi可以 **纯CT而不用管DE** ), taskhead (~MATTAR)，考虑r作为弱监督或predhead目标(某种guidance)，而非具体目标（使用attnhead(over agents)+meanpool，或最大互信息等，避免具体的agent sum），但仍然有可能用linear mixer上phi-mix; 
+#* ✅pre阶段学phi(phi可以 **纯CT而不用管DE** ), //taskhead (~MATTAR)//，考虑r作为弱监督或predhead目标(某种guidance)，而非具体目标（使用attnhead(over agents)+meanpool，或最大互信息等，避免具体的agent sum），但仍然有可能用linear mixer上phi-mix; 
 #* off阶段仅针对phi学习psi值网络和特征提取（注意和phi架构有所不同，额外输入动作）（此时则可能不用考虑拟合reward，mix在psi层面进行），taskhead则固定，或仅加入某种修正项；  
 #! 总的来说，phi是作为reward的一个稠密的代理而被使用
 #* on阶段仅学习psi值部分，但使用真实reward？；
 #* adapt尝试根据MATTAR，设计taskid微调或是其他
 # TODO </
+#* 不用agent CA也行，SID假设仍然可以用于构建框架
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="new attn pre weighted BCE"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="pre wBCE stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="pre wBCE stable" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="pre wBCE stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="pre wBCE stable" &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="pre wo wBCE stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="pre wo wBCE stable" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="pre wo wBCE stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="pre wo wBCE stable" &
+wait
+#* //weighted invdyn loss可以缓解之前loss大幅上涨再下降的问题(loss回正6w~20w step不等；改进后则为2w~6w step，上升幅度小得多，较大的上升更晚到来，这可能是优化任务特性)//(只是稍微推迟，且 r guide的第一个实现有问题，不用作对比)，可能可以提升稳定性和泛化性
+#* 但10w step后出现暴增的现象仍然存在；10w step的效果比之前的更好，按照之前的做法，仅使用10w step的结果
+#* LN > BN，原因未知
+#* weighted loss +  lr <= 0.001, bs <= 32效果最好，更长的训练时间内也没有出现暴涨，且具鲁棒性，对seed不敏感；bs=32时收敛最快
+#* 没有wBCE也可以，应该主要是学习率的问题，宜小不宜大
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="off stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="off stable" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="off stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="off stable" &
+wait
+#* mixer activ与性能没有必然关系，偶尔比较好
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --load_step=100023 --use_wandb=True --wandb_note="loadstep 10w"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --load_step=200043 --use_wandb=True --wandb_note="loadstep 20w"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --load_step=300063 --use_wandb=True --wandb_note="loadstep 30w"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --load_step=500103 --use_wandb=True --wandb_note="loadstep 50w"
+200043, 300063, 500103
+#* 影响不大
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="on stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="on stable" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="on stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="on stable" &
+wait
+#* 确认off2on可行，大约10ksteps在off次优的任务上到最高
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="off hilp phi" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="off hilp phi" &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="off hilp phi wo wBCE" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="off hilp phi wo wBCE" &
+wait
 
 #! /> 关于泛化迁移的一个新的见解
 #* 在新场景或对新数据进行学习不遗忘的一个关键可能在于特征提取的通用性，即零泛化能力（通用表征等），后续不进行学习仍然可以进行使用，只是针对真实奖励进行学习以对齐价值；这一假设需要检验 # CHECK
@@ -284,3 +334,7 @@ CUDA_VISIBLE_DEVICES=1 python src.qplex/main.py --transfer --config=tr_sf_mto --
 #! 就这一点来说，该框架可用于IL|IRL与RL，如果具有专家数据则无需真实奖励，否则需要真实奖励对phi进行奖励对齐
 #! 如果这一点可以确证，则能表明SF用于off2on以及更广泛的额可迁移学习的一个全新的解法，并且是十分高效的；这其中的关键则是通用特征phi的学习和构建，以及基于此的psi学习架构和多阶段学习方式；这甚至有可能做到持续学习场景中
 #! </ 关于泛化迁移的一个新的见解
+#* 所以其实所有的phi^i, psi^i都无需直接对齐奖励值，而是mix之后的phi_tot, psi_tot需要对齐，相对于个体值他们经过mixer的重新组合，而linear mixer保证个体和全局特征语义一致，即前者也满足重新组合的关系；单论前者则是构成了一种pseudo reward（或reward model，等同于IRL中的设定），或者在这里其实是pseudo phi。 ("MAAIRL: recover a reward function that rationalizes the expert behaviors with the least commitment")
+#? 对更复杂的任务，也许off阶段需要reward信号帮助调整mixer以实现对齐（简单任务如lbf上没有rloss会稍好一点） # CHECK
+
+#* off带上rloss会有某种错误对齐，导致值估计增加较快，并干扰tdloss的优化，同时gradnorm较大，但有时能进入一些罕见的更优解（2p3f上完成速度更快，有可能是该环境本身存在某种’作弊解‘？）

@@ -83,7 +83,7 @@ class TrBasicMAC:
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = []
         cur_w = self.explain_task(task)
-        psi = self.forward(ep_batch, t_ep, task)[1]
+        psi = self.forward(ep_batch, t_ep, task, test_mode)[1]
         # psi = psi.transpose(-1, -2)
         agent_outputs = (psi * cur_w).sum(-1)
 
@@ -98,13 +98,18 @@ class TrBasicMAC:
         action_pred = self.agent.pretrain_forward(obs, next_obs, task).reshape(bs, seq_len, n_agents, -1)
         return action_pred
     
-    def forward(self, ep_batch, t, task): # for training offline|online
+    def forward(self, ep_batch, t, task, test_mode=False): # for training offline|online
         # NOTE online forward: train the same psi network for unseen task weights
         agent_inputs = self._build_inputs(ep_batch, t, task)
         obs = ep_batch["obs"][:, t]
+        if t < ep_batch.max_seq_length - 1:
+            next_obs = ep_batch["obs"][:, t+1]
+        else:
+            next_obs = th.zeros_like(obs)
         obs = obs.reshape(-1, obs.shape[-1])
+        next_obs = next_obs.reshape(-1, obs.shape[-1])
         
-        self.hidden_states, phi, psi = self.agent(obs, agent_inputs, self.hidden_states, task)
+        self.hidden_states, phi, psi = self.agent(obs, next_obs, agent_inputs, self.hidden_states, task, test_mode)
         # psi: (bs, n, d_phi, n_act)
 
         # Softmax the agent outputs if they're policy logits

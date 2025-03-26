@@ -26,15 +26,15 @@ class TrSFRNNAgent(nn.Module):
         self.attn_embed_dim = args.attn_embed_dim
         self.hidden_dim = args.rnn_hidden_dim
 
-        self.phi_dim = args.rnn_hidden_dim
+        self.phi_dim = args.entity_embed_dim * args.head * 2
         # self.fixed_phi = th.randn(3 * self.hidden_dim, self.phi_dim, device=args.device).clamp(-1, 1) # imitate fronzen transformation as in Does Zeroshot RL...
         self.mode = None
 
         # define various networks
         self.phi_gen = AttnFeatureExtractor(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args, is_for_pretrain=True)
         self.attn_enc = AttnFeatureExtractor(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args)
-        self.value = ValueModule(surrogate_decomposer, args)
-        self.task_explainer = TaskHead(n_train_task, args)
+        self.value = ValueModule(surrogate_decomposer, args, self.phi_dim)
+        self.task_explainer = TaskHead(n_train_task, args, self.phi_dim)
         
         self.set_train_mode(train_mode)
         
@@ -51,11 +51,19 @@ class TrSFRNNAgent(nn.Module):
         action_pred = self.phi_gen.invdyn_forward(obs, next_obs, task)
         return action_pred
     
-    def forward(self, obs, inputs, hidden_state, task): # psi forward
+    def forward(self, obs, next_obs, inputs, hidden_state, task, test_mode): # psi forward
         n_agents = self.task2n_agents[task]
         bs = inputs.shape[0] // n_agents
-        phi, _ = self.phi_gen.feature_forward(obs, task) # NOTE no grad flows back to phi
-        phi = phi.view(bs, n_agents, -1)
+        # phi, _ = self.phi_gen.feature_forward(obs, task) # NOTE no grad flows back to phi
+        # phi = phi.view(bs, n_agents, -1)
+        
+        if test_mode:
+            phi = None
+        else:
+            phi_cur, _ = self.phi_gen.feature_forward(obs, task)
+            phi_next, _ = self.phi_gen.feature_forward(next_obs, task)
+            phi = th.cat([phi_cur, phi_next], dim=-1)
+            phi = phi.view(bs, n_agents, -1)
         
         attn_feature, enemy_feats = self.attn_enc.attn_forward(inputs, task) 
         if self.mode in ['online', 'adapt']:
@@ -357,12 +365,12 @@ class ValueModule(nn.Module):
     '''
     compute psi|Q value based on 
     '''
-    def __init__(self, surrogate_decomposer, args):
+    def __init__(self, surrogate_decomposer, args, phi_dim):
         super().__init__()
         self.args = args
         self.entity_embed_dim = args.entity_embed_dim
         self.hidden_dim = args.rnn_hidden_dim
-        self.phi_dim = args.rnn_hidden_dim
+        self.phi_dim = phi_dim
         self.have_attack_action = (surrogate_decomposer.n_actions != surrogate_decomposer.n_actions_no_attack)
         ## get obs shape information
         match self.args.env:
@@ -429,13 +437,13 @@ class TaskHead(nn.Module):
     '''
     compute w via | multitask regression | -task weight explainer-
     '''
-    def __init__(self, n_train_task, args, hidden_dim=128, dropout_rate=0.2):
+    def __init__(self, n_train_task, args, phi_dim, hidden_dim=128, dropout_rate=0.2):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_train_task, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(hidden_dim, args.rnn_hidden_dim),
+            nn.Linear(hidden_dim, phi_dim),
             # nn.Tanh(),
             # nn.Softmax(dim=-1),
         )
