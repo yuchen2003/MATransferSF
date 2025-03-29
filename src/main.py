@@ -177,7 +177,7 @@ if __name__ == '__main__':
     
     # test match in python 3.10.x
     match config_dict["env"]:
-        case "sc2":
+        case "sc2" | "sc2_v2":
             # overwrite map_name config
             if "map_name" in config_dict:
                 config_dict["env_args"]["map_name"] = config_dict["map_name"]
@@ -202,7 +202,7 @@ if __name__ == '__main__':
     config_dict['unique_token'] = unique_token
 
     match config_dict["env"]:
-        case "sc2":
+        case "sc2" | "sc2_v2":
             env, map_name = config_dict["env"], config_dict["env_args"]["map_name"]
         case "gymma":
             env, map_name = config_dict["env_args"]["key"].split(':')
@@ -221,7 +221,7 @@ if __name__ == '__main__':
                 unique_token
             )
         case "collect":
-            if env == "sc2" and config_dict["stop_winrate"] > 0:    
+            if (env == "sc2" or env == "sc2_v2") and config_dict["stop_winrate"] > 0:    
                 aux_dir = f"stop_win_rate_{config_dict['stop_winrate']}"
             else:
                 aux_dir = f"stop_return_{config_dict['stop_return']}"

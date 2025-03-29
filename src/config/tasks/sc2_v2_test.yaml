@@ -1,0 +1,23 @@
+# ----- test lbf transfer setting config -----
+
+# get env information
+env: "sc2"
+
+# get task information
+task: "sc2_v2_test"
+# define train tasks and test tasks
+train_tasks: [
+  "protoss_5_vs_5", "protoss_5_vs_6",
+]
+train_tasks_data_quality: {
+  "3m": "expert",
+  "4m": "expert",
+}
+
+tasks_offline_bottom_data_paths: {
+  "3m": "/home/amax/xyc/MATr/offpymarl/dataset/sc2/3m/expert/seed_1_qmix_2024-12-15_14-58-34",
+  "4m": "/home/amax/xyc/MATr/offpymarl/dataset/sc2/4m/expert/seed_1_qmix_2024-12-30_17-07-16",
+}
+
+trans_tasks: ["protoss_6_vs_6"]
+test_tasks: ["protoss_5_vs_5", "protoss_5_vs_6", "protoss_6_vs_6"]

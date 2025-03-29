@@ -217,7 +217,7 @@ def run_sequential(args, logger):
             local_results_path = os.path.join(dirname(dirname(abspath(__file__))), "results") # default.yaml -> results by default
             
             match args.env:
-                case "sc2":
+                case "sc2" | "sc2_v2":
                     save_path = os.path.join(local_results_path, args.env, args.env_args["map_name"], args.name, "models", args.unique_token, str(runner.t_env))
                 case "mpe":
                     save_path = os.path.join(local_results_path, args.env, args.env_args["scenario_name"], args.name, "models", args.unique_token, str(runner.t_env))

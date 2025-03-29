@@ -70,9 +70,8 @@ class TrSFRNNAgent(nn.Module):
             attn_feature = attn_feature.detach() # TODO may detach here in online mode
         h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state)
         
-        # psi: (bsn, n_act, d_phi) -> (bsn, d_phi, n_act) -> (bs, n, d_phi, n_act)
+        # psi: (bsn, n_act, d_phi) -> (bs, n, n_act, d_phi)
         psi = psi.view(bs, n_agents, -1, self.phi_dim)
-        # psi = psi.transpose(1, 2).view(bs, n_agents, self.phi_dim, -1)
 
         return h, phi, psi
         
@@ -160,14 +159,15 @@ class AttnFeatureExtractor(nn.Module):
 
         ## get obs shape information
         match self.args.env:
-            case "sc2":
+            case "sc2" | "sc2_v2":
                 obs_own_dim, obs_en_dim, obs_al_dim = (
                     surrogate_decomposer.aligned_own_obs_dim,
                     surrogate_decomposer.aligned_obs_nf_en,
                     surrogate_decomposer.aligned_obs_nf_al,
                 )
                 ## enemy_obs ought to add attack_action_infos
-                obs_en_dim += 1
+                if not is_for_pretrain and self.args.obs_last_action:
+                    obs_en_dim += 1
             case "gymma":
                 obs_own_dim, obs_en_dim, obs_al_dim = (
                     surrogate_decomposer.own_obs_dim,
@@ -175,15 +175,16 @@ class AttnFeatureExtractor(nn.Module):
                     surrogate_decomposer.obs_nf_al,
                 )
                 ## enemy_obs ought to add attack_action_infos
-                obs_en_dim += surrogate_decomposer.n_actions_attack
+                if not is_for_pretrain and self.args.obs_last_action: # CHECK
+                    obs_en_dim += surrogate_decomposer.n_actions_attack
             case _:
                 raise NotImplementedError
 
         n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-        wrapped_obs_own_dim = obs_own_dim + self.args.id_length
+        wrapped_obs_own_dim = obs_own_dim + self.args.id_length + 1
 
         if not is_for_pretrain and self.args.obs_last_action:
-            wrapped_obs_own_dim += n_actions_no_attack + 1
+            wrapped_obs_own_dim += n_actions_no_attack
 
         assert self.attn_embed_dim % self.args.head == 0
         # obs self-attention modules
@@ -283,7 +284,7 @@ class AttnFeatureExtractor(nn.Module):
         own_obs = th.cat([own_obs, agent_id_inputs, compact_action_states], dim=-1)
 
         # incorporate attack_action_info (n_enemies, bs*n_agents, 1) into enemy_feats
-        if self.have_attack_action:
+        if not self.is_for_pretrain and self.have_attack_action: # FIXME
             attack_action_info = attack_action_info.transpose(0, 1).unsqueeze(-1)
             enemy_feats = th.cat([th.stack(enemy_feats, dim=0), attack_action_info], dim=-1).transpose(0, 1) 
         else:
@@ -374,7 +375,7 @@ class ValueModule(nn.Module):
         self.have_attack_action = (surrogate_decomposer.n_actions != surrogate_decomposer.n_actions_no_attack)
         ## get obs shape information
         match self.args.env:
-            case "sc2":
+            case "sc2" | "sc2_v2":
                 obs_en_dim = surrogate_decomposer.aligned_obs_nf_en
                 obs_en_dim += 1
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack

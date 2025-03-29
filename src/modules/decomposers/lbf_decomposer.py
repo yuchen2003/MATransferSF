@@ -93,7 +93,7 @@ class GymDecomposer:
         bin_attack_info = no_attack_action_info[:, -1:]
         
         # recover shape: (bs, n, *)
-        no_attack_action_info = no_attack_action_info.reshape(*shape[:-1], -1)    
+        no_attack_action_info = no_attack_action_info.reshape(*shape[:-1], -1)
         attack_action_info = attack_action_info.reshape(*shape[:-1], -1)
         bin_attack_info = bin_attack_info.reshape(*shape[:-1], -1)
         

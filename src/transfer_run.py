@@ -52,7 +52,7 @@ def run(_run, _config, _log):
         logger.setup_tb(tb_exp_direc)
         
     if args.use_wandb:
-        stage2job = {0: "offline", 1: "online", 2: "eval"}
+        stage2job = {0: "pretrain", 1: "offline", 2: "online", 3: "eval"}
         logger.setup_wandb(
             _config, args.wandb_team, args.wandb_project, args.wandb_mode, job_type=stage2job[args.ckpt_stage]
         )
@@ -134,7 +134,7 @@ def init_tasks(task_list, main_args, logger):
 
     for task in task_list:
         task_args = copy.deepcopy(main_args)
-        if main_args.env == "sc2":
+        if main_args.env in ["sc2", "sc2_v2"]:
             task_args.env_args["map_name"] = task
         elif main_args.env == "gymma":
             task_args.env_args["key"] = task
@@ -145,7 +145,7 @@ def init_tasks(task_list, main_args, logger):
 
         # Set up schemes and groups here
         env_info = task_runner.get_env_info()
-        for k, v in env_info.items():
+        for k, v in env_info.items(): # CHECK n_units
             setattr(task_args, k, v)
 
         # Default/Base scheme

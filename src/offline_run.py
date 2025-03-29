@@ -164,7 +164,7 @@ def run_sequential(args, logger):
     
     # Create Offline Data
     match args.env:
-        case "sc2":
+        case "sc2" | "sc2_v2":
             map_name = args.env_args["map_name"]
         case "gymma":
             env_name, map_name = args.env_args['key'].split(':')

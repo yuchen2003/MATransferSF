@@ -7,7 +7,7 @@ class MTVDNMixer(nn.Module):
     def __init__(self, surrogate_decomposer, main_args):
         super(MTVDNMixer, self).__init__()
         match main_args.env:
-            case "sc2":
+            case "sc2" | "sc2_v2":
                 state_dim = surrogate_decomposer.aligned_state_dim
             case "gymma":
                 state_dim = surrogate_decomposer.obs_dim

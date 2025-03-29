@@ -29,7 +29,7 @@ hypernet_layers: 2
 hypernet_embed: 64
 
 # ckpt_stage: 0
-# lr: 0.001
+# lr: 0.0005
 # pretrain_batch_size: 32
 # pretrain_steps: 200005
 # test_interval: 5000
@@ -40,8 +40,8 @@ hypernet_embed: 64
 ckpt_stage: 1
 # checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2025-03-14_13-49-55/models/pretrain
 # load_step: 100005
-checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_4_tr_sf_2025-03-26_10-21-38/models/pretrain/
-load_step: 70017
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_4_tr_sf_2025-03-26_10-21-38/models/pretrain/
+# load_step: 70017
 offline_train_steps: 50005
 test_interval: 500
 log_interval: 500

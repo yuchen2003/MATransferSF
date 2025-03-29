@@ -1,4 +1,4 @@
-from smac.env.starcraft2.maps import get_map_params
+from smacv2.env.starcraft2.maps import get_map_params
 
 import torch as th
 import enum
@@ -42,12 +42,12 @@ class Direction(enum.IntEnum):
 
 def get_unit_type_from_map_type(map_type):
     match map_type:
-        case "marines":
-            return ["marine"]
-        case "stalkers_and_zealots":
-            return ["stalker", "zeolot"]
-        case "MMM":
+        case "10gen_protoss":
+            return ["stalker", "zealot", "colossus"]
+        case "10gen_terran":
             return ["marine", "marauder", "medivac"]
+        case "10gen_zerg":
+            return ["zergling", "hydralisk", "baneling"]
         case _:
             raise Exception("Do not support map_type:", map_type, "so far")
 
@@ -98,6 +98,82 @@ class SC2Decomposer:
         self.shield_bits_enemy = 1 if self._bot_race == "P" else 0
         self.unit_type_bits = map_params["unit_type_bits"]
         self.map_type = map_params["map_type"]
+        
+        # Capability configs
+        self.capability_config = args.env_args["capability_config"]
+        self.fully_observable = args.env_args["fully_observable"]
+        self.stochastic_attack = "attack" in self.capability_config
+        self.stochastic_health = "health" in self.capability_config
+        self.replace_teammates = "team_gen" in self.capability_config
+        self.obs_own_pos = args.env_args["obs_own_pos"]
+        self.mask_enemies = "enemy_mask" in self.capability_config
+        if self.stochastic_attack:
+            self.zero_pad_stochastic_attack = not self.capability_config[
+                "attack"
+            ]["observe"]
+            self.observe_attack_probs = self.capability_config["attack"][
+                "observe"
+            ]
+        if self.stochastic_health:
+            self.zero_pad_health = not self.capability_config["health"][
+                "observe"
+            ]
+            self.observe_teammate_health = self.capability_config["health"][
+                "observe"
+            ]
+        if self.replace_teammates:
+            self.zero_pad_unit_types = not self.capability_config["team_gen"][
+                "observe"
+            ]
+            self.observe_teammate_types = self.capability_config["team_gen"][
+                "observe"
+            ]
+        self.n_agents = (
+            map_params["n_agents"]
+            if not self.replace_teammates
+            else self.capability_config["team_gen"]["n_units"]
+        )
+        self.n_enemies = (
+            map_params["n_enemies"]
+            if not self.replace_teammates
+            else self.capability_config["team_gen"]["n_units"]
+        )
+        self.random_start = "start_positions" in self.capability_config
+        self.conic_fov = args.env_args["conic_fov"]
+        self.n_fov_actions = args.env_args["num_fov_actions"] if self.conic_fov else 0
+        self.conic_fov_angle = (
+            (2 * np.pi) / self.n_fov_actions if self.conic_fov else 0
+        )
+        
+        self.obs_starcraft = args.env_args["obs_starcraft"]
+        
+        # create lists containing the names of attributes returned in states
+        self.ally_state_attr_names = [
+            "health",
+            "energy/cooldown",
+            "rel_x",
+            "rel_y",
+        ]
+        self.enemy_state_attr_names = ["health", "rel_x", "rel_y"]
+
+        if self.shield_bits_ally > 0:
+            self.ally_state_attr_names += ["shield"]
+        if self.shield_bits_enemy > 0:
+            self.enemy_state_attr_names += ["shield"]
+        if self.conic_fov:
+            self.ally_state_attr_names += ["fov_x", "fov_y"]
+            
+        self.capability_attr_names = []
+        if "attack" in self.capability_config:
+            self.capability_attr_names += ["attack_probability"]
+        if "health" in self.capability_config:
+            self.capability_attr_names += ["total_health"]
+        if self.unit_type_bits > 0:
+            bit_attr_names = [
+                "type_{}".format(bit) for bit in range(self.unit_type_bits)
+            ]
+            self.capability_attr_names += bit_attr_names
+            self.enemy_state_attr_names += bit_attr_names
 
         # get the shape of obs' components
         self.move_feats, self.enemy_feats, self.ally_feats, self.own_feats, self.obs_nf_en, self.obs_nf_al = \
@@ -111,9 +187,11 @@ class SC2Decomposer:
             self.get_state_size()
         self.state_dim = self.enemy_state_dim + self.ally_state_dim + self.last_action_state_dim + self.timestep_number_state_dim
 
-        self.unit_types = get_unit_type_from_map_type(self.map_type)
+        # self.unit_types = get_unit_type_from_map_type(self.map_type)
+        self.unit_types = args.env_args["capability_config"]["team_gen"]["unit_types"]
 
     def align_feats_dim(self, aligned_unit_type_bits, aligned_shield_bits_ally, aligned_shield_bits_enemy, map_type_set):
+        # NOTE aligned_unit_type_bits == 3 for default smacv2 settings
         self.aligned_unit_type_bits = aligned_unit_type_bits
         self.aligned_shield_bits_ally = aligned_shield_bits_ally
         self.aligned_shield_bits_enemy = aligned_shield_bits_enemy
@@ -178,7 +256,7 @@ class SC2Decomposer:
         
         # now we only allow "marine", "sz" , "MMM"
         self.unit_type2_order = {}
-        match [aligned_unit_type_bits, self.map_type]: # TODO
+        match [aligned_unit_type_bits, self.map_type]:
             case [3, "marines"]:
                 if "marauder" in map_type_set:
                     self.unit_type2_order["marine"] = 1
@@ -191,6 +269,18 @@ class SC2Decomposer:
                 self.unit_type2_order["marauder"] = 0
                 self.unit_type2_order["marine"] = 1
                 self.unit_type2_order["medivac"] = 2
+            case [3, "protoss_gen"]:
+                self.unit_type2_order["stalker"] = 0
+                self.unit_type2_order["zealot"] = 1
+                self.unit_type2_order["colossus"] = 2
+            case [3, "terran_gen"]:
+                self.unit_type2_order["marine"] = 0
+                self.unit_type2_order["marauder"] = 1
+                self.unit_type2_order["medivac"] = 2
+            case [3, "zerg_gen"]:
+                self.unit_type2_order["zergling"] = 0
+                self.unit_type2_order["hydralisk"] = 1
+                self.unit_type2_order["baneling"] = 2
             case [5, "marines"]:
                 self.unit_type2_order["marine"] = 0
             case [5, "MMM"]:
@@ -205,20 +295,49 @@ class SC2Decomposer:
                     pass
                 else:
                     raise Exception("Not support")
+    
+    def get_obs_ally_capability_size(self):
+        """Returns the size of capabilities observed by teammates."""
+        cap_feats = 0
+        if self.stochastic_attack and (
+                self.zero_pad_stochastic_attack or self.observe_attack_probs
+        ):
+            cap_feats += 1
+        if self.stochastic_health and (
+                self.observe_teammate_health or self.zero_pad_health
+        ):
+            cap_feats += 1
+
+        return cap_feats
         
+    def get_cap_size(self):
+        """Returns the size of the own capabilities of the agent."""
+        cap_feats = 0
+        if self.stochastic_attack:
+            cap_feats += 1
+        if self.stochastic_health:
+            cap_feats += 1
+        if self.unit_type_bits > 0:
+            cap_feats += self.unit_type_bits
 
-
+        return cap_feats
+        
     def get_obs_size(self):
         nf_al = 4 + self.unit_type_bits
         nf_en = 4 + self.unit_type_bits
+        nf_cap = self.get_obs_ally_capability_size()
 
         if self.obs_all_health:
             nf_al += 1 + self.shield_bits_ally
             nf_en += 1 + self.shield_bits_enemy
 
-        own_feats = self.unit_type_bits
-        if self.obs_own_health:
+        own_feats = self.get_cap_size()
+        if self.obs_own_health and self.obs_starcraft:
             own_feats += 1 + self.shield_bits_ally
+        if self.conic_fov and self.obs_starcraft:
+            own_feats += 2
+        if self.obs_own_pos and self.obs_starcraft:
+            own_feats += 2
         if self.obs_timestep_number:
             own_feats += 1
 
@@ -232,16 +351,24 @@ class SC2Decomposer:
             move_feats += self.n_obs_height
 
         enemy_feats = self.n_enemies * nf_en
-        ally_feats = (self.n_agents - 1) * nf_al
+        ally_feats = (self.n_agents - 1) * (nf_al + nf_cap)
         
         return move_feats, enemy_feats, ally_feats, own_feats, nf_en, nf_al
 
+    def get_ally_num_attributes(self):
+        return len(self.ally_state_attr_names) + len(
+            self.capability_attr_names
+        )
+        
+    def get_enemy_num_attributes(self):
+        return len(self.enemy_state_attr_names)
+    
     def get_state_size(self):
         if self.obs_instead_of_state:
             raise Exception("Not Implemented for obs_instead_of_state")
         
-        nf_al = 4 + self.shield_bits_ally + self.unit_type_bits
-        nf_en = 3 + self.shield_bits_enemy + self.unit_type_bits
+        nf_al = self.get_ally_num_attributes()
+        nf_en = self.get_enemy_num_attributes()
         
         enemy_state = self.n_enemies * nf_en
         ally_state = self.n_agents * nf_al
@@ -440,7 +567,7 @@ class SC2Decomposer:
                         
             return ret_features
 
-    def _pad_unit_type(self, features, ret_features, copy_dim, start_pad_unit_dim, insight_type="all"):
+    def _pad_unit_type(self, features, ret_features, copy_dim, start_pad_unit_dim, insight_type="all"): 
         match self.map_type:
             case "marines":
                 if self.unit_type_bits == 0:
@@ -472,12 +599,33 @@ class SC2Decomposer:
             case "MMM":
                 marauder_idx = th.argwhere(features[:, copy_dim] == 1).squeeze(-1) # no shield
                 marine_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1)
-                medivac_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1) # FIXME bug ?
+                medivac_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1) # CHECK
                 ret_features[marauder_idx, start_pad_unit_dim+self.unit_type2_order["marauder"]] = 1
                 ret_features[marine_idx, start_pad_unit_dim+self.unit_type2_order["marine"]] = 1
                 ret_features[medivac_idx, start_pad_unit_dim+self.unit_type2_order["medivac"]] = 1
+            case "protoss_gen":
+                stalker_idx = th.argwhere(features[:, copy_dim] == 1).squeeze(1)
+                zealot_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1)
+                colossus_idx = th.argwhere(features[:, copy_dim+2] == 1).squeeze(-1) # CHECK
+                ret_features[stalker_idx, start_pad_unit_dim+self.unit_type2_order["stalker"]] = 1
+                ret_features[zealot_idx, start_pad_unit_dim+self.unit_type2_order["zealot"]] = 1
+                ret_features[colossus_idx, start_pad_unit_dim+self.unit_type2_order["colossus"]] = 1
+            case "terran_gen":
+                marine_idx = th.argwhere(features[:, copy_dim] == 1).squeeze(-1)
+                marauder_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1)
+                medivac_idx = th.argwhere(features[:, copy_dim+2] == 1).squeeze(-1)
+                ret_features[marine_idx, start_pad_unit_dim+self.unit_type2_order["marine"]] = 1
+                ret_features[marauder_idx, start_pad_unit_dim+self.unit_type2_order["marauder"]] = 1
+                ret_features[medivac_idx, start_pad_unit_dim+self.unit_type2_order["medivac"]] = 1
+            case "zerg_gen":
+                zergling_idx = th.argwhere(features[:, copy_dim] == 1).squeeze(-1)
+                hydralisk_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1)
+                baneling_idx = th.argwhere(features[:, copy_dim+2] == 1).squeeze(-1)
+                ret_features[zergling_idx, start_pad_unit_dim+self.unit_type2_order["zergling"]] = 1
+                ret_features[hydralisk_idx, start_pad_unit_dim+self.unit_type2_order["hydralisk"]] = 1
+                ret_features[baneling_idx, start_pad_unit_dim+self.unit_type2_order["baneling"]] = 1
             case _:
-                raise ValueError("map_type should be in ['marines', 'stalkers_and_zealots', 'MMM']")
+                raise ValueError("map_type should be in ['marines', 'stalkers_and_zealots', 'MMM', 'protoss_gen', 'terran_gen', 'zerg_gen']")
         return ret_features
 
     def _print_info(self):

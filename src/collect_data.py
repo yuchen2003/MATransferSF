@@ -96,7 +96,7 @@ def evaluate_sequential(args, runner, logger):
     logger.console_logger.info("Do offline data collection with collecting {} trajectories with checkpoint loaded from {}".format(args.num_episodes_collected, args.checkpoint_path))
     
     match args.env:
-        case "sc2":
+        case "sc2" | "sc2_v2":
             save_path = os.path.join('dataset', args.env, args.env_args['map_name'], args.offline_data_quality, args.unique_token)
         case "gymma":
             env, map_name = args.env_args["key"].split(":")
@@ -209,7 +209,7 @@ def run_sequential(args, logger):
     if args.save_replay_buffer and args.offline_data_quality.lower() != 'random':
         # use replay data
         match args.env:
-            case "sc2":
+            case "sc2" | "sc2_v2":
                 save_path = os.path.join(args.offline_data_folder, args.env, args.env_args['map_name'], args.offline_data_quality + "-replay", args.unique_token)
             case "gymma":
                 env_name, map_name = args.env_args['key'].split(':')
@@ -263,7 +263,7 @@ def run_sequential(args, logger):
             # early stop
             logdic = runner._log(runner.test_returns, runner.test_stats, "test_")
             if args.offline_data_quality.lower() in ['medium', 'full']:
-                if args.env == "sc2":
+                if "sc2" in args.env:
                     if args.stop_winrate > 0:
                         if logdic['test_battle_won_mean'] >= args.stop_winrate:
                             logger.console_logger.info("Early stop due to test winrate")

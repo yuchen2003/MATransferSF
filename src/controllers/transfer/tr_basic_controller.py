@@ -19,23 +19,22 @@ class TrBasicMAC:
         self.agent_output_type = main_args.agent_output_type
         self.action_selector = action_REGISTRY[main_args.action_selector](main_args)
 
-        if self.main_args.env not in ["sc2", "gymma"]:
+        if self.main_args.env not in ["sc2", "sc2_v2", "gymma"]:
             raise NotImplementedError
         env2decomposer = {
             "sc2": "sc2_decomposer",
+            "sc2_v2": "sc2_v2_decomposer",
             "gymma": "gymma_decomposer",
         }
         self.task2decomposer = {}
         self.surrogate_decomposer = None
         
         match self.main_args.env:
-            case "sc2":
+            case "sc2" | "sc2_v2":
                 aligned_unit_type_bits, aligned_shield_bits_ally, aligned_shield_bits_enemy = 0, 0, 0
                 map_type_set = set()
                 for task in all_tasks:
                     task_args = self.task2args[task]
-                    if not task_args.env == "sc2":
-                        raise NotImplementedError(f"Unsupported env decomposer {task_args.env}")
                     task_decomposer = decomposer_REGISTRY[env2decomposer[task_args.env]](task_args)
                     
                     aligned_shield_bits_ally = max(aligned_shield_bits_ally, task_decomposer.shield_bits_ally)

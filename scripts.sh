@@ -326,6 +326,20 @@ wait
 CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="off hilp phi wo wBCE" &
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=3 --use_wandb=True --wandb_note="off hilp phi wo wBCE" &
 wait
+#* // learner中的load optim statedict貌似比较重要，原理不清楚 //
+#* 主要还是phigen学习的问题
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="pre hilp phi stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="pre hilp phi stable" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="off hilp phi stable" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="off hilp phi stable" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="off hilp phi stable"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="off hilp phi stable"
+#* 出现暴涨的pretrain ckpt都学起来了，没出现的都不太学得了，后续可能会展开分析下，作为对phigen的一个研究
 
 #! /> 关于泛化迁移的一个新的见解
 #* 在新场景或对新数据进行学习不遗忘的一个关键可能在于特征提取的通用性，即零泛化能力（通用表征等），后续不进行学习仍然可以进行使用，只是针对真实奖励进行学习以对齐价值；这一假设需要检验 # CHECK
@@ -338,3 +352,7 @@ wait
 #? 对更复杂的任务，也许off阶段需要reward信号帮助调整mixer以实现对齐（简单任务如lbf上没有rloss会稍好一点） # CHECK
 
 #* off带上rloss会有某种错误对齐，导致值估计增加较快，并干扰tdloss的优化，同时gradnorm较大，但有时能进入一些罕见的更优解（2p3f上完成速度更快，有可能是该环境本身存在某种’作弊解‘？）
+
+
+#* 适配smacv2
+python src/main.py --collect --config=qmix --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=100 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True

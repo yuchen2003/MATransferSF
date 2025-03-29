@@ -148,7 +148,7 @@ class MTRNNAgent(nn.Module):
     def _build_attention(self, surrogate_decomposer):
         ## get obs shape information
         match self.args.env:
-            case "sc2":
+            case "sc2" | "sc2_v2":
                 obs_own_dim = surrogate_decomposer.aligned_own_obs_dim
                 obs_en_dim, obs_al_dim = surrogate_decomposer.aligned_obs_nf_en, surrogate_decomposer.aligned_obs_nf_al        
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
@@ -175,7 +175,7 @@ class MTRNNAgent(nn.Module):
     def _build_policy(self, surrogate_decomposer):
         ## get obs shape information
         match self.args.env:
-            case "sc2":
+            case "sc2" | "sc2_v2":
                 obs_en_dim = surrogate_decomposer.aligned_obs_nf_en      
                 obs_en_dim += 1
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
