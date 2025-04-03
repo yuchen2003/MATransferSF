@@ -119,10 +119,6 @@ class TransferSFLearner:
         mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
         avail_actions = batch["avail_actions"]
         
-        # (bs, T, n, 1) -> (bs, T, n, d_phi, 1) ~ psi_out[:, :, :, :, *]
-        expand_actions = actions.unsqueeze(3).repeat(1, 1, 1, self.phi_dim, 1)
-        # (bs, T, n, n_act) -> (bs, T, n, d_phi, n_act) ~ psi_out
-        expand_avail_actions = avail_actions.unsqueeze(3).repeat(1, 1, 1, self.phi_dim, 1)
         # (bs, T, 1) -> (bs, T, 1, d_phi)
         expand_terminated = terminated.repeat(1, 1, n_agents)
 

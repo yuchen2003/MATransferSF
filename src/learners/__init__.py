@@ -1,4 +1,5 @@
 from .q_learner import QLearner
+from .nq_learner import NQLearner
 from .coma_learner import COMALearner
 from .qtran_learner import QLearner as QTranLearner
 from .null_learner import NullLearner
@@ -13,6 +14,7 @@ REGISTRY = {}
 
 REGISTRY["bc_learner"] = BCLearner
 REGISTRY["q_learner"] = QLearner
+REGISTRY["nq_learner"] = NQLearner
 REGISTRY["coma_learner"] = COMALearner
 REGISTRY["qtran_learner"] = QTranLearner
 REGISTRY["null_learner"] = NullLearner

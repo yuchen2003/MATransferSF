@@ -1,7 +1,9 @@
 REGISTRY = {}
 
 from .rnn_agent import RNNAgent
+from .n_rnn_agent import NRNNAgent
 REGISTRY["rnn"] = RNNAgent
+REGISTRY["n_rnn"] = NRNNAgent
 
 from .multi_task.mt_rnn_agent import MTRNNAgent
 from .multi_task.odis_agent import ODISAgent

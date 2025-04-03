@@ -194,6 +194,7 @@ def run_sequential(args, logger):
         runner.t_env = timestep_to_load
 
         if args.evaluate or args.save_replay:
+            logger.console_logger.info("[ Only collect data from ckpt. ]")
             evaluate_sequential(args, runner, logger)
             return
         

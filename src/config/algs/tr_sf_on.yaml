@@ -28,9 +28,20 @@ mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
 
-ckpt_stage: 2
-checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_2_tr_sf_2025-03-20_20-09-53/models/offline
+# /> for LBF
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_2_tr_sf_2025-03-20_20-09-53/models/offline
+# load_step: 50005
+# </ for LBF
+
+# /> for smac
+checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/3m-expert+4m-expert/tr_sf/seed_2_tr_sf_2025-03-30_10-20-46/models/offline
 load_step: 50005
+# </ for smac
+
+# /> for smacv2
+# </ for smacv2
+
+ckpt_stage: 2
 online_train_steps: 20005
 test_interval: 200
 log_interval: 200
@@ -41,7 +52,6 @@ learner_log_interval: 200
 
 # agent type
 agent: "tr_sf_rnn"
-phi_dim: 64
 
 # mac
 mac: "tr_basic_mac"

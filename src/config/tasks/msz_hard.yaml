@@ -21,3 +21,4 @@ tasks_offline_bottom_data_paths: {
 }
 
 test_tasks: ["5m_vs_6m", "9m_vs_10m", "2s2z_vs_4z","2s1z_vs_3z"]
+trans_tasks: ["9m_vs_10m", "2s2z_vs_4z"]

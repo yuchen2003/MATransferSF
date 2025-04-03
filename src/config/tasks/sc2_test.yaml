@@ -19,5 +19,7 @@ tasks_offline_bottom_data_paths: {
   "4m": "/home/amax/xyc/MATr/offpymarl/dataset/sc2/4m/expert/seed_1_qmix_2024-12-30_17-07-16",
 }
 
-trans_tasks: ["5m", "7m"]
-test_tasks: ["3m", "4m", "5m", "7m"]
+trans_tasks: ["5m", "7m", "10m"]
+test_tasks: ["3m", "4m", "5m", "7m", "10m"]
+
+#*

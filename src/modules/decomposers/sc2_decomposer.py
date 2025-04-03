@@ -472,7 +472,7 @@ class SC2Decomposer:
             case "MMM":
                 marauder_idx = th.argwhere(features[:, copy_dim] == 1).squeeze(-1) # no shield
                 marine_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1)
-                medivac_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1) # FIXME bug ?
+                medivac_idx = th.argwhere(features[:, copy_dim+2] == 1).squeeze(-1) # FIXME bug ?
                 ret_features[marauder_idx, start_pad_unit_dim+self.unit_type2_order["marauder"]] = 1
                 ret_features[marine_idx, start_pad_unit_dim+self.unit_type2_order["marine"]] = 1
                 ret_features[medivac_idx, start_pad_unit_dim+self.unit_type2_order["medivac"]] = 1

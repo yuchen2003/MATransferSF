@@ -353,6 +353,59 @@ CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-co
 
 #* off带上rloss会有某种错误对齐，导致值估计增加较快，并干扰tdloss的优化，同时gradnorm较大，但有时能进入一些罕见的更优解（2p3f上完成速度更快，有可能是该环境本身存在某种’作弊解‘？）
 
+#smac数据
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=sc2_collect --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=5m_vs_6m --use_wandb=True &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=sc2_collect --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=9m_vs_10m --use_wandb=True &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=sc2_collect --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=2s3z --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_collect --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=2s1z_vs_3z --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_collect --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=MMM --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_collect --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=MMM2 --use_wandb=True &
+wait
 
 #* 适配smacv2
-python src/main.py --collect --config=qmix --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=100 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_beta --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_beta --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_beta --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_beta --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True
+#* parallel的实现可能有问题，或者是并行的方式/64线不适合，或学习率不适合，造成收敛很慢
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix_beta --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix_ft --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True --wandb_note="qmix fted"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_ft --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_6_vs_6 --use_wandb=True --wandb_note="qmix fted"
+# TODO 目前看smacv2应该是正常的，decomposer之后再看看；目前先收集smacv2数据，调smac性能，以及在lbf上看看whead怎么改性能不掉又合理
+# TODO smacv2+qmix大致4m步已收敛，可以提前终止然后用最后的策略收集数据（**仅收集**）
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_5_vs_5 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_5_vs_6 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=sc2_v2_protoss --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_protoss_10_vs_10 --use_wandb=True &
+wait
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_v2_terran --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_terran_5_vs_5 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_v2_terran --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_terran_5_vs_6 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_v2_terran --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_terran_10_vs_10 --use_wandb=True &
+wait
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_v2_zerg --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_zerg_5_vs_5 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_v2_zerg --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_zerg_5_vs_6 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=sc2_v2_zerg --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_zerg_10_vs_10 --use_wandb=True &
+wait
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_v2_zerg --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_zerg_5_vs_6 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=sc2_v2_terran --offline_data_quality=expert --save_replay_buffer=True --num_episodes_collected=4000 --stop_winrate=0.9 --seed=1 --map_name=10gen_terran_5_vs_6 --use_wandb=True &
+wait 
+# smac上测试trsf
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=1 --use_wandb=True --wandb_note="smac off" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=2 --use_wandb=True --wandb_note="smac off" &
+wait
+#* 无训练phigen性能正常
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=3 --lr=0.0005 --use_wandb=True --wandb_note="smac pre lr=0.0005" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=3 --lr=0.001 --use_wandb=True --wandb_note="smac pre lr=0.001" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=3 --lr=0.002 --use_wandb=True --wandb_note="smac pre lr=0.002" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=3 --lr=0.005 --use_wandb=True --wandb_note="smac pre lr=0.005" &
+wait
+#* 影响不大，很快会暴涨（若按照过拟合的理解则是很快已经解出，或是无需求解）
+# 测试with pre phi
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=1 --use_wandb=True --wandb_note="smac off w pre" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=2 --use_wandb=True --wandb_note="smac off w pre" &
+wait
+## smac off2on
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=sc2_transfer --task-config=sc2_test --seed=1 --use_wandb=True --wandb_note="smac off2on" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=sc2_transfer --task-config=sc2_test --seed=2 --use_wandb=True --wandb_note="smac off2on" &
+wait
+# TODO 给trsf也适配下parallel? 先看看流程中哪些地方慢；但更大的问题是显存占用

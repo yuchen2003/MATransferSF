@@ -28,32 +28,43 @@ mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
 
-# ckpt_stage: 0
-# lr: 0.0005
+#* pretrain
+ckpt_stage: 0
+# lr: 0.005
 # pretrain_batch_size: 32
-# pretrain_steps: 200005
-# test_interval: 5000
-# log_interval: 5000
-# runner_log_interval: 5000
-# learner_log_interval: 5000
+pretrain_steps: 300005 # FIXME for debug; 200005 is default
+test_interval: 5000
+log_interval: 5000
+runner_log_interval: 5000
+learner_log_interval: 5000
 
-ckpt_stage: 1
+#* offline train
+# /> for LBF
 # checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2025-03-14_13-49-55/models/pretrain
 # load_step: 100005
 # checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_4_tr_sf_2025-03-26_10-21-38/models/pretrain/
 # load_step: 70017
-offline_train_steps: 50005
-test_interval: 500
-log_interval: 500
-runner_log_interval: 500
-learner_log_interval: 500
+# </ for LBF
+
+# /> for SMAC
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/3m-expert+4m-expert/tr_sf/seed_3_tr_sf_2025-03-30_21-50-39/models/pretrain
+# load_step: 10002
+# </ for SMAC
+
+# /> for SMACv2
+# </ for SMACv2
+# ckpt_stage: 1
+# offline_train_steps: 10005 # LBF: 50005, smac: 10005
+# test_interval: 500
+# log_interval: 500
+# runner_log_interval: 500
+# learner_log_interval: 500
 
 
 # </ learner
 
 # agent type
 agent: "tr_sf_rnn"
-phi_dim: 64
 
 # mac
 mac: "tr_basic_mac"

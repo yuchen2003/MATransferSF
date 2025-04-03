@@ -26,7 +26,7 @@ class TrSFRNNAgent(nn.Module):
         self.attn_embed_dim = args.attn_embed_dim
         self.hidden_dim = args.rnn_hidden_dim
 
-        self.phi_dim = args.entity_embed_dim * args.head * 2
+        self.phi_dim = args.entity_embed_dim * args.head * 2 # FIXME 优化一下维度
         # self.fixed_phi = th.randn(3 * self.hidden_dim, self.phi_dim, device=args.device).clamp(-1, 1) # imitate fronzen transformation as in Does Zeroshot RL...
         self.mode = None
 
@@ -194,13 +194,13 @@ class AttnFeatureExtractor(nn.Module):
         self.enemy_key = nn.Linear(obs_en_dim, self.attn_embed_dim * self.args.head)
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim * self.args.head)
         self.own_value = nn.Linear(wrapped_obs_own_dim, self.entity_embed_dim * self.args.head)
-        
+
         attn_feature_dim = self.entity_embed_dim * self.args.head * 3
         self.layernorm1 = nn.LayerNorm(attn_feature_dim)
         self.layernorm2 = nn.LayerNorm(self.entity_embed_dim * self.args.head)
         self.feat_trfm = FCNet(attn_feature_dim, self.entity_embed_dim * self.args.head, use_last_activ=True)
         self.phi_clamp = .1
-        
+
         if is_for_pretrain:
             # inverse dynamic predictor
             self.na_action_layer = nn.Sequential(
@@ -333,19 +333,13 @@ class AttnFeatureExtractor(nn.Module):
         bst, n_agents, _ = obs.size()
         obs = obs.reshape(bst * n_agents, -1)
         next_obs = next_obs.reshape(bst * n_agents, -1)
-        obs_attn_feature, enemy_states = self.feature_forward(obs, task) # (bsTn, d)
+        obs_attn_feature, enemy_states = self.feature_forward(obs, task) # (bsTn, d), (bsTn, n_enemy, d_o_enemy)
         next_obs_attn_feature, _ = self.feature_forward(next_obs, task)
-        action_pred_in = th.cat(
-            [
-                obs_attn_feature.reshape(bst, n_agents, -1),
-                next_obs_attn_feature.reshape(bst, n_agents, -1),
-            ],
-            dim=-1,
-        )  # (bsT, n, 2d)
+        action_pred_in = th.cat([obs_attn_feature, next_obs_attn_feature], dim=-1)  # (bsTn, 2d)
 
         na_action_pred = self.na_action_layer(action_pred_in)
         if self.have_attack_action:
-            enemy_feature = self.enemy_embed(enemy_states) # (bsT, n_enemy, hid)
+            enemy_feature = self.enemy_embed(enemy_states) # (bsTn, n_enemy, d_phi)
             attack_action_input = th.cat(
                 [
                     enemy_feature,
@@ -353,7 +347,7 @@ class AttnFeatureExtractor(nn.Module):
                 ],
                 dim=-1
             ) # (bs, n_enemy, hid+2d)
-            attack_action_pred = self.attack_action_layer(attack_action_input).squeeze(-1) # TODO need debug
+            attack_action_pred = self.attack_action_layer(attack_action_input).squeeze(-1)
             action_pred = th.cat([na_action_pred, attack_action_pred], dim=-1)
         else:
             action_pred = na_action_pred

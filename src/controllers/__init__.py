@@ -3,10 +3,12 @@ REGISTRY = {}
 from .basic_controller import BasicMAC
 from .random_controller import RandomMAC
 from .maddpg_controller import MADDPGMAC
+from .n_controller import NMAC
 
 REGISTRY["basic_mac"] = BasicMAC
 REGISTRY['random_mac'] = RandomMAC
 REGISTRY['maddpg_mac'] = MADDPGMAC
+REGISTRY["n_mac"] = NMAC
 
 from .multi_task.mt_basic_controller import MTBasicMAC
 from .multi_task.mt_maddpg_controller import MTMADDPGMAC

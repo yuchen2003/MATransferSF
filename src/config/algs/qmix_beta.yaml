@@ -4,12 +4,13 @@
 action_selector: "epsilon_greedy"
 epsilon_start: 1.0
 epsilon_finish: 0.05
-epsilon_anneal_time: 50000
+epsilon_anneal_time: 100000
 
 runner: "parallel"
-batch_size_run: 8
 
 buffer_size: 5000
+batch_size_run: 64
+batch_size: 16
 
 # update the target network every {} episodes
 target_update_interval_or_tau: 200
@@ -20,5 +21,11 @@ learner: "q_learner"
 double_q: True
 mixer: "qmix"
 mixing_embed_dim: 32
+hypernet_layers: 2
+hypernet_embed: 64
+lr: 0.001
 
-name: "qmix_smac_parallel"
+name: "qmix"
+
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/collect/sc2_v2/10gen_protoss_6_vs_6/expert/stop_win_rate_0.9/qmix/seed_1_qmix_2025-03-29_08-54-44/models
+# load_step: 2000088
