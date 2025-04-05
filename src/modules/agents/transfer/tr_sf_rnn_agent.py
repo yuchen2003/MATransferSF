@@ -265,7 +265,7 @@ class AttnFeatureExtractor(nn.Module):
         last_action_shape = self.task2last_action_shape[task]
 
         # decompose inputs into observation inputs, last_action_info, agent_id_info
-        obs_dim = task_decomposer.obs_dim
+        obs_dim = task_decomposer.obs_dim # FIXME
         obs_inputs, last_action_inputs, agent_id_inputs = inputs[:, :obs_dim], \
             inputs[:, obs_dim:obs_dim+last_action_shape], inputs[:, obs_dim+last_action_shape:]
 
@@ -284,7 +284,7 @@ class AttnFeatureExtractor(nn.Module):
         own_obs = th.cat([own_obs, agent_id_inputs, compact_action_states], dim=-1)
 
         # incorporate attack_action_info (n_enemies, bs*n_agents, 1) into enemy_feats
-        if not self.is_for_pretrain and self.have_attack_action: # FIXME
+        if not self.is_for_pretrain and self.have_attack_action: 
             attack_action_info = attack_action_info.transpose(0, 1).unsqueeze(-1)
             enemy_feats = th.cat([th.stack(enemy_feats, dim=0), attack_action_info], dim=-1).transpose(0, 1) 
         else:

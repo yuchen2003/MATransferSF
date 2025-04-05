@@ -60,7 +60,7 @@ def get_unit_type_from_map_type(map_type):
     elif map_type == "colossi_stalkers_zealots":
         return ["stalker", "zeolot", "colossi"]"""
     
-class SC2Decomposer:
+class SC2V2Decomposer:
     def __init__(self, args):
         # Load map params
         self.map_name = args.env_args["map_name"]
@@ -136,7 +136,7 @@ class SC2Decomposer:
         self.n_enemies = (
             map_params["n_enemies"]
             if not self.replace_teammates
-            else self.capability_config["team_gen"]["n_units"]
+            else self.capability_config["team_gen"]["n_enemies"]
         )
         self.random_start = "start_positions" in self.capability_config
         self.conic_fov = args.env_args["conic_fov"]

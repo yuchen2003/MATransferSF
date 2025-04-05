@@ -30,8 +30,8 @@ hypernet_embed: 64
 
 #* pretrain
 ckpt_stage: 0
-# lr: 0.005
-# pretrain_batch_size: 32
+lr: 0.005
+pretrain_batch_size: 16
 pretrain_steps: 300005 # FIXME for debug; 200005 is default
 test_interval: 5000
 log_interval: 5000
