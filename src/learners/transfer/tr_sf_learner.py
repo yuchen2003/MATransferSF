@@ -83,14 +83,14 @@ class TransferSFLearner:
                 self.task2rew_ms[task] = RunningMeanStd(shape=(1, ), device=device)
     
     def pretrain(self, batch, t_env: int, episode_num: int, task: str):
-        obs = batch["obs"][:, :-1]
-        next_obs = batch["obs"][:, 1:]
+        state = batch["state"]
+        obs = batch["obs"]
         actions_onehot = batch["actions_onehot"][:, :-1]
         terminated = batch["terminated"][:, :-1].float()
         mask = batch["filled"][:, :-1].float()
         mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
         
-        action_pred = self.mac.pretrain_forward(obs, next_obs, task)
+        r_hat, action_pred = self.mac.pretrain_forward(state, obs, task) # TODO rhat
         mask = mask.unsqueeze(-1).repeat(1, 1, *actions_onehot.shape[-2:])
         loss = F.binary_cross_entropy(action_pred * mask, actions_onehot * mask)
         
@@ -106,7 +106,8 @@ class TransferSFLearner:
             self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
             self.task2train_info[task]["log_stats_t"] = t_env
             if grad_norm.item() == 0:
-                print("ERROR...")
+                print("ERROR... GRADS VANISH.")
+                exit(-1)
     
     def train(self, batch, t_env: int, episode_num: int, task: str, mode: str):
         ''' mode = | offline | online | adapt | '''

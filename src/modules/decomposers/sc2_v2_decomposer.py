@@ -440,6 +440,8 @@ class SC2V2Decomposer:
         action_info: shape [(bs), n_agent, n_action], can be last_action_input
         """
         shape = action_info.shape
+        if shape[-1] == 0:
+            return action_info, action_info, action_info
         
         if len(shape) > 2:
             action_info = action_info.reshape(np.prod(shape[:-1]), shape[-1])

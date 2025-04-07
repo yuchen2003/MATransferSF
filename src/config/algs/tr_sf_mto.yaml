@@ -30,8 +30,8 @@ hypernet_embed: 64
 
 #* pretrain
 ckpt_stage: 0
-lr: 0.005
-pretrain_batch_size: 16
+# lr: 0.0001
+# pretrain_batch_size: 4
 pretrain_steps: 300005 # FIXME for debug; 200005 is default
 test_interval: 5000
 log_interval: 5000
@@ -52,9 +52,11 @@ learner_log_interval: 5000
 # </ for SMAC
 
 # /> for SMACv2
+# checkpoint_path: results/transfer/sc2_v2/sc2_v2_test/5e-05/16/10gen_protoss_5_vs_5-expert+10gen_protoss_5_vs_6-expert/tr_sf/seed_1234_tr_sf_2025-04-05_22-02-04/models/pretrain
+# load_step: 300005
 # </ for SMACv2
 # ckpt_stage: 1
-# offline_train_steps: 10005 # LBF: 50005, smac: 10005
+# offline_train_steps: 30005 # LBF: 50005, smac: 10005
 # test_interval: 500
 # log_interval: 500
 # runner_log_interval: 500

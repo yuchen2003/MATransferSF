@@ -15,11 +15,9 @@ train_tasks_data_quality: {
 }
 
 tasks_offline_bottom_data_paths: {
-  "3m": "/home/amax/xyc/MATr/offpymarl/dataset/sc2/3m/expert/seed_1_qmix_2024-12-15_14-58-34",
-  "4m": "/home/amax/xyc/MATr/offpymarl/dataset/sc2/4m/expert/seed_1_qmix_2024-12-30_17-07-16",
+  "3m": "dataset/sc2/3m/expert/seed_1_qmix_2024-12-15_14-58-34",
+  "4m": "dataset/sc2/4m/expert/seed_1_qmix_2024-12-30_17-07-16",
 }
 
 trans_tasks: ["5m", "7m", "10m"]
 test_tasks: ["3m", "4m", "5m", "7m", "10m"]
-
-#*

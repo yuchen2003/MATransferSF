@@ -15,8 +15,8 @@ train_tasks_data_quality: {
 }
 
 tasks_offline_bottom_data_paths: {
-  "10gen_terran_5_vs_5": "/home/amax/xyc/MATr/offpymarl/dataset/sc2_v2/10gen_terran_5_vs_5/expert/seed_1_qmix_2025-04-03_20-58-53",
-  "10gen_terran_5_vs_6": "/home/amax/xyc/MATr/offpymarl/dataset/sc2_v2/10gen_terran_5_vs_6/expert/seed_1_qmix_2025-04-03_20-58-53",
+  "10gen_terran_5_vs_5": "dataset/sc2_v2/10gen_terran_5_vs_5_expert/seed_1_qmix_2025-04-03_20-58-53",
+  "10gen_terran_5_vs_6": "dataset/sc2_v2/10gen_terran_5_vs_6_expert/seed_1_qmix_2025-04-03_20-58-53",
 }
 
 trans_tasks: ["10gen_terran_6_vs_6", "10gen_terran_10_vs_10"]

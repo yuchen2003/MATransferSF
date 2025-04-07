@@ -90,12 +90,11 @@ class TrBasicMAC:
         
         return chosen_actions
 
-    def pretrain_forward(self, obs, next_obs, task):
+    def pretrain_forward(self, state, obs, task):
         bs, seq_len, n_agents = obs.shape[:3]
-        obs = self._build_flat(obs)
-        next_obs = self._build_flat(next_obs)
-        action_pred = self.agent.pretrain_forward(obs, next_obs, task).reshape(bs, seq_len, n_agents, -1)
-        return action_pred
+        # obs = self._build_flat(obs)
+        r_hat, action_pred = self.agent.pretrain_forward(state, obs, task).reshape(bs, seq_len, n_agents, -1)
+        return r_hat, action_pred
     
     def forward(self, ep_batch, t, task, test_mode=False): # for training offline|online
         # NOTE online forward: train the same psi network for unseen task weights
