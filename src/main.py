@@ -255,23 +255,12 @@ if __name__ == '__main__':
         case "transfer":
             if config_dict['evaluate']:
                 results_path = os.path.join(results_path, 'evaluate')
-            if config_dict['ckpt_stage'] == 0:
-                pre_lr = str(config_dict['lr'])
-                pre_bs = str(config_dict['pretrain_batch_size'])
-                results_save_dir = os.path.join(
-                    results_path, "transfer", env, config_dict['task'],
-                    pre_lr, pre_bs,
-                    '+'.join([f'{k}-{v}' for k, v in config_dict['train_tasks_data_quality'].items()]),
-                    config_dict['name'] + config_dict['remark'],
-                    unique_token
-                )
-            else:
-                results_save_dir = os.path.join(
-                    results_path, "transfer", env, config_dict['task'],
-                    '+'.join([f'{k}-{v}' for k, v in config_dict['train_tasks_data_quality'].items()]),
-                    config_dict['name'] + config_dict['remark'],
-                    unique_token
-                )
+            results_save_dir = os.path.join(
+                results_path, "transfer", env, config_dict['task'],
+                # '+'.join([f'{k}-{v}' for k, v in config_dict['train_tasks_data_quality'].items()]),
+                config_dict['name'] + config_dict['remark'],
+                unique_token
+            )
                 
         case _:
             raise NotImplementedError("Not support run_file: {}".format(config_dict['run_file']))

@@ -34,33 +34,21 @@ mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
 
+#* pretrain
+# /> for LBF
+
+# </ for LBF
+
 pretrain_lr_decay_rate: 300 # lr will decay to lr/(1+rate) upon pretrain_steps
 pretrain_steps: 300005
 pretrain_batch_size: 16
 
-#* offline train
-offline_train_steps: 30005 # LBF: 50005, smac: 10005
-
-# /> for LBF
-checkpoint_path: /root/shared-nvme/xyc/MATransferSF/results/transfer/lbforaging/lbf_test/tr_sf/seed_5_tr_sf_2025-04-11_15-14-51/models/pretrain/
-load_step: 300005
-# </ for LBF
-
-# /> for SMAC
-# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/3m-expert+4m-expert/tr_sf/seed_3_tr_sf_2025-03-30_21-50-39/models/pretrain
-# load_step: 10002
-# </ for SMAC
-
-# /> for SMACv2
-# checkpoint_path: results/transfer/sc2_v2/sc2_v2_test/5e-05/16/10gen_protoss_5_vs_5-expert+10gen_protoss_5_vs_6-expert/tr_sf/seed_1234_tr_sf_2025-04-05_22-02-04/models/pretrain
-# load_step: 300005
-# </ for SMACv2
-
-ckpt_stage: 1
-test_interval: 500
-log_interval: 500
-runner_log_interval: 500
-learner_log_interval: 500
+ckpt_stage: 0
+lr: 0.005
+test_interval: 1000
+log_interval: 1000
+runner_log_interval: 1000
+learner_log_interval: 1000
 
 # </ learner
 

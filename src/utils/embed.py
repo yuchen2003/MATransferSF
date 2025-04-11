@@ -19,3 +19,12 @@ def onehot_embed(v, length):
     embed_vec = np.zeros(length,)
     embed_vec[v] = 1.
     return embed_vec
+
+def pad_shape(z, x, extra=0, pos=0):
+    ''' assume len(x.shape) > len(z.shape). E.g.
+        x: [bs1, x, y, z, da]
+        z: [bs2, db]
+        pos: padding shape start from z.shape[pos]
+        return: z in [bs2, db, 1, 1, 1; extra 1's] view
+    '''
+    return z.view(*z.shape[:pos], *([1] * (len(x.shape) - len(z.shape) + extra)), *z.shape[pos:])

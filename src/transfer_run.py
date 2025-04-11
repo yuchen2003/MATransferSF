@@ -145,7 +145,7 @@ def init_tasks(task_list, main_args, logger):
 
         # Set up schemes and groups here
         env_info = task_runner.get_env_info()
-        for k, v in env_info.items(): # CHECK n_units
+        for k, v in env_info.items():
             setattr(task_args, k, v)
 
         # Default/Base scheme

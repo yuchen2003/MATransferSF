@@ -15,8 +15,8 @@ train_tasks_data_quality: {
 }
 
 tasks_offline_bottom_data_paths: {
-  "10gen_zerg_5_vs_5": "dataset/sc2_v2/10gen_zerg_5_vs_5_expert/seed_1_qmix_2025-04-03_21-14-06",
-  "10gen_zerg_5_vs_6": "dataset/sc2_v2/10gen_zerg_5_vs_6_expert/seed_1_qmix_2025-04-03_21-14-06",
+  "10gen_zerg_5_vs_5": "dataset/sc2_v2/10gen_zerg_5_vs_5/expert/seed_1_qmix_2025-04-03_21-14-06",
+  "10gen_zerg_5_vs_6": "dataset/sc2_v2/10gen_zerg_5_vs_6/expert/seed_1_qmix_2025-04-03_21-14-06",
 }
 
 trans_tasks: ["10gen_zerg_6_vs_6", "10gen_zerg_10_vs_10"]

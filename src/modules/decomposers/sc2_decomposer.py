@@ -178,7 +178,7 @@ class SC2Decomposer:
         
         # now we only allow "marine", "sz" , "MMM"
         self.unit_type2_order = {}
-        match [aligned_unit_type_bits, self.map_type]: # TODO
+        match [aligned_unit_type_bits, self.map_type]:
             case [3, "marines"]:
                 if "marauder" in map_type_set:
                     self.unit_type2_order["marine"] = 1
@@ -474,7 +474,7 @@ class SC2Decomposer:
             case "MMM":
                 marauder_idx = th.argwhere(features[:, copy_dim] == 1).squeeze(-1) # no shield
                 marine_idx = th.argwhere(features[:, copy_dim+1] == 1).squeeze(-1)
-                medivac_idx = th.argwhere(features[:, copy_dim+2] == 1).squeeze(-1) # FIXME bug ?
+                medivac_idx = th.argwhere(features[:, copy_dim+2] == 1).squeeze(-1) # NOTE diff from init impl, it may be fixed here
                 ret_features[marauder_idx, start_pad_unit_dim+self.unit_type2_order["marauder"]] = 1
                 ret_features[marine_idx, start_pad_unit_dim+self.unit_type2_order["marine"]] = 1
                 ret_features[medivac_idx, start_pad_unit_dim+self.unit_type2_order["medivac"]] = 1

@@ -70,7 +70,7 @@ class MTQMixer(nn.Module):
     def forward(self, agent_qs, states, task_decomposer):
         # agent_qs: [batch_size, seq_len, n_agents, d_phi]
         # states: [batch_size, seq_len, state_dim]
-        bs, seq_len, n_agents = agent_qs.size()
+        bs, seq_len, n_agents, phi_dim = agent_qs.size()
         n_enemies = task_decomposer.n_enemies
         n_entities = n_agents + n_enemies
 
@@ -113,15 +113,11 @@ class MTQMixer(nn.Module):
         )  # (bs, seq_len, n_agents, x)
         mixing_input = out
 
-        # w1 = F.softmax(self.hyper_w_1(entity_mixing_input), dim=-1) 
-        # w1 = w1.view(-1, n_agents, self.embed_dim) # (bs * seq_len, n_agents, x)
         w1 = th.abs(self.hyper_w_1(entity_mixing_input))
         b1 = self.hyper_b_1(mixing_input)
         w1 = w1.view(-1, n_agents, self.embed_dim) # (bs * seq_len, n_agents, x)
         b1 = b1.view(-1, 1, self.embed_dim) # (bs * seq_len , 1, x)
-        # agent_qs = agent_qs.permute(0, 1, 3, 2).view(-1, 1, n_agents) # (bs*seq_len, phi_dim, n_agents)
-        agent_qs = agent_qs.view(-1, 1, n_agents)
-        # hidden = F.elu(th.bmm(agent_qs, w1)) # (bs*seq_len, phi_dim, x); Q^h
+        agent_qs = agent_qs.transpose(-1, -2).view(-1, phi_dim, n_agents) # (bs*seq_len, phi_dim, n_agents)
         hidden = F.elu(th.bmm(agent_qs, w1) + b1) # (bs*seq_len, phi_dim, x); Q^h
 
         # Second layer
@@ -131,6 +127,5 @@ class MTQMixer(nn.Module):
         # Compute final output
         y = th.bmm(hidden, w_final) + v # (bs*seq_len, phi_dim, 1)
 
-        # q_tot = y.view(bs, -1, 1) # (bs, seq_len, d_phi, 1)
-        q_tot = y.view(bs, seq_len, 1)  # (bs, seq_len, 1, d_phi)
+        q_tot = y.view(bs, seq_len, phi_dim)  # (bs, seq_len, d_phi)
         return q_tot

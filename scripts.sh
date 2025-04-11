@@ -408,4 +408,21 @@ wait
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=sc2_transfer --task-config=sc2_test --seed=1 --use_wandb=True --wandb_note="smac off2on" &
 CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=sc2_transfer --task-config=sc2_test --seed=2 --use_wandb=True --wandb_note="smac off2on" &
 wait
-# TODO 给trsf也适配下parallel? 先看看流程中哪些地方慢；但更大的问题是显存占用
+# -TODO 给trsf也适配下parallel? 先看看流程中哪些地方慢；但更大的问题是显存占用✅过了多次网络
+
+# new arch: phimix
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="phimix pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="phimix pre" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="phimix pre a_loss dominate" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="phimix pre a_loss dominate" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="phimix pre thres w_reg fix" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="phimix pre thres w_reg fix" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf pre" &
+wait
