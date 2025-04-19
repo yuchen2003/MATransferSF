@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from utils.embed import polynomial_embed, binary_embed, onehot_embed, pad_shape
 from utils.calc import count_total_parameters
-from utils.rl_utils import RunningMeanStd
+from utils.rl_utils import RunningMeanStd, EMAMeanStd
 
 # ---------------------- TranSSFer implement ----------------------
 
@@ -31,6 +31,7 @@ class TrSFRNNAgent(nn.Module):
         self.task2n_agents = task2n_agents
         self.args = args
         self.have_attack_action = (surrogate_decomposer.n_actions != surrogate_decomposer.n_actions_no_attack)
+        self.all_task = all_task
 
         # define various dimension information
         ## set attributes
@@ -43,18 +44,23 @@ class TrSFRNNAgent(nn.Module):
         task_spec_in = [task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args, self.phi_dim]
         self.task_explainer = TaskHead(*task_spec_in, all_task) # should update slowly ~ target net -> wreg may have stablized it
         self.phi_gen = AttnFeatureExtractor(*task_spec_in, self.task_explainer, is_for_pretrain=True)
-        self.attn_enc = AttnFeatureExtractor(*task_spec_in, self.task_explainer)
+        self.attn_enc = AttnFeatureExtractor(*task_spec_in, None)
         self.value = ValueModule(surrogate_decomposer, args, self.phi_dim)
         
-        train_mode = train_mode.lower()
-        assert train_mode in ['pretrain', 'offline', 'online', 'adapt']
-        print(f"Model in [{train_mode}] training mode.")
-        self.mode = train_mode
+        self.use_residual_agent = args.use_residual_agent
+        if self.use_residual_agent:
+            self.resi_attn_enc = AttnFeatureExtractor(*task_spec_in, None)
+            self.resi_value = ValueModule(surrogate_decomposer, args, self.phi_dim)
         
         for module in [self.task_explainer, self.phi_gen, self.attn_enc, self.value]:
             count_total_parameters(module)
         print("Agent: ")
         count_total_parameters(self, is_concrete=True)
+        
+        train_mode = train_mode.lower()
+        assert train_mode in ['pretrain', 'offline', 'online', 'adapt']
+        print(f"Model in [{train_mode}] training mode.")
+        self.mode = train_mode
 
     def init_hidden(self):
         return th.zeros(1, self.args.rnn_hidden_dim, device=self.args.device)
@@ -73,22 +79,35 @@ class TrSFRNNAgent(nn.Module):
         
         return phi
     
-    def forward(self, inputs, hidden_state, task): # psi forward
+    def forward(self, inputs, hidden_state, task, mixing_w, resi_h=None): # psi forward
         n_agents = self.task2n_agents[task]
         bs = inputs.shape[0] // n_agents
+        if len(mixing_w.shape) == 1: # [d,] | [bs, d] -> [n, d] | [bsn, d] == attn_feature.shape
+            mixing_w = mixing_w.unsqueeze(0).expand(n_agents, -1)
+        elif len(mixing_w.shape) == 2:
+            mixing_w = mixing_w.unsqueeze(1).repeat(1, n_agents, 1).reshape(bs * n_agents, -1)
+        else:
+            raise NotImplementedError
         
-        attn_feature, enemy_feats = self.attn_enc.attn_forward(inputs, task) 
+        attn_feature, enemy_feats = self.attn_enc.attn_forward(inputs, task)
         if self.mode in ['online', 'adapt']:
             attn_feature = attn_feature.detach()
-        h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state)
- 
-        # psi: (bsn, n_act, d_phi) -> (bs, n, n_act, d_phi)
-        psi = psi.view(bs, n_agents, -1, self.phi_dim)
+        h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state, mixing_w)
 
-        return h, psi
-        
+        if self.use_residual_agent:
+            resi_attn_feature, resi_enemy_feats = self.resi_attn_enc.attn_forward(inputs, task)
+            resi_h, resi_psi = self.resi_value.forward(resi_attn_feature, resi_enemy_feats, resi_h, mixing_w)
+            psi_out = psi.detach() + resi_psi
+            psi_out = psi_out.view(bs, n_agents, -1, self.phi_dim)
+            return h, resi_h, psi_out
+        else:
+            # psi: (bsn, n_act, d_phi) -> (bs, n, n_act, d_phi)
+            psi = psi.view(bs, n_agents, -1, self.phi_dim)
+            return h, psi
+
     def explain_task(self, task, state=None, state_mask=None, test_mode=True):
         if test_mode:
+            assert state is None and state_mask is None
             # Only for inference
             mixing_w = self.task_explainer.read_explain(task)
             mixing_n = None
@@ -102,11 +121,24 @@ class TrSFRNNAgent(nn.Module):
         th.save(self.task_explainer.task2w_ms, "{}/task_embed.th".format(path))
         
     def load(self, path):
-        self.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
+        # More fine-grained save and load can be implemented
+        missing, unexpected = self.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage), strict=False)
+        print(f"Missing: {missing}, Unexpected: {unexpected}.")
+                
         self.task_explainer.task2w_ms = th.load("{}/task_embed.th".format(path))
         for k, v in self.task_explainer.task2w_ms.items():
-            print(f"read {k} var: {np.mean(v.var)}")
+            if v.var is not None:
+                print(f"read {k} std: {np.sqrt(np.mean(v.var))}")
         
+        if self.use_residual_agent:
+            print("Cloning for residual agents")
+            self.resi_attn_enc.load_state_dict(self.attn_enc.state_dict())
+            self.resi_value.load_state_dict(self.value.state_dict())
+        
+        saved_task = set(self.task_explainer.task2w_ms.keys())
+        all_task = set(self.all_task)
+        new_task = all_task - saved_task
+        self.task_explainer.register_task(list(new_task))
 
 # ---------------------- Main components ----------------------
 
@@ -324,13 +356,19 @@ class TaskHead(nn.Module):
         self.n_proj = FCNet(self.entity_embed_dim, 1, 2, self.entity_embed_dim)
         
         self.task2w_ms = {}
+        self.register_task(all_task)
+        
+    def register_task(self, all_task):
         for task in all_task:
-            wms = RunningMeanStd(shape=(self.phi_dim,))
-            wms.mean = np.random.randn(self.phi_dim) / self.phi_dim
+            wms = EMAMeanStd()
             self.task2w_ms[task] = wms
         
     def read_explain(self, task):
-        return th.as_tensor(self.task2w_ms[task].mean, device=self.args.device)
+        m = self.task2w_ms[task].mean
+        if m is None:
+            return th.ones(self.phi_dim, device=self.args.device) / self.phi_dim
+        else:
+            return th.as_tensor(self.task2w_ms[task].mean, device=self.args.device)
         
     def _attention(self, q, k, v, attn_dim, mask=None):
         """
@@ -387,7 +425,8 @@ class TaskHead(nn.Module):
         entity_attn = entity_attn * state_mask # NOTE 原则上是对的
         entity_ln1 = self.traj_ln1(entity_attn + entity_value)
         entity_ln2 = self.traj_ln2(entity_ln1 + self.traj_feat_trfm(entity_ln1))
-        entity_out = entity_ln2.mean(dim=1).reshape(bs, n_entities, self.entity_embed_dim)
+        entity_ln2 = entity_ln2.reshape(bs, n_entities, t, self.entity_embed_dim)
+        entity_out = entity_ln2.mean(dim=2)
 
         # do entity-wise attention # TODO add multihead attn
         proj_query = self.query(entity_out)
@@ -399,10 +438,9 @@ class TaskHead(nn.Module):
         # mean pooling over entity
         out = attn_ln2.mean(dim=1) # [bs, d]
         
-        mixing_w = self.w_proj(out) # [bs, d_phi] # could be learnable Gaussian 
-        # entity_ln2 = entity_ln2.reshape(bs, n_entities, t, self.entity_embed_dim)
-        # mixing_n = self.n_proj(entity_ln2[:, :task_n_agents]).squeeze(-1).abs() 
-        mixing_n = self.n_proj(attn_ln2[:, :task_n_agents]).squeeze(-1).abs() # [bs, n]
+        mixing_w = self.w_proj(out).abs() # [bs, d_phi] # could be learnable Gaussian 
+        mixing_n = self.n_proj(entity_ln2[:, :task_n_agents]).squeeze(-1).abs() # [bs, T, n]
+        # mixing_n = self.n_proj(attn_ln2[:, :task_n_agents]).squeeze(-1).abs() # [bs, n]
 
         return mixing_w, mixing_n
 
@@ -422,12 +460,8 @@ class AttnFeatureExtractor(nn.Module):
         self.obs_decomposer = PIObsDecomposer(task2input_shape_info, task2decomposer, task2n_agents, surrogate_decomposer, args, concat_obs_act=is_for_pretrain)
         obs_en_dim = self.obs_decomposer.obs_en_dim
         n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-
-        attn_feature_dim = self.args.entity_embed_dim * self.args.head * 3  
-        self.layernorm1 = nn.LayerNorm(attn_feature_dim)
-        self.layernorm2 = nn.LayerNorm(phi_dim)
-        self.feat_trfm = FCNet(attn_feature_dim, phi_dim, use_last_activ=True)
-
+        self.is_for_pretrain = is_for_pretrain
+        
         if is_for_pretrain:
             self.task_explainer = task_explainer
             # inverse dynamic predictor
@@ -454,8 +488,8 @@ class AttnFeatureExtractor(nn.Module):
         # inputs: [bsn|bsTn, *]
         attn_feature, enemy_feat = self.obs_decomposer.get_obs_feature(inputs, task)
         attn_feature = self.layernorm1(attn_feature)
-        out = self.layernorm2(self.feat_trfm(attn_feature))
-        out = out / out.size(-1) # regularize the scale of (weighted) summation # CHECK whether explode
+        attn_feature = self.layernorm2(self.feat_trfm(attn_feature))
+        out = attn_feature
         return out, enemy_feat
     
     # Only for pretrain
@@ -470,8 +504,10 @@ class AttnFeatureExtractor(nn.Module):
 
         # 1. phi mix
         mixing_w, mixing_n = self.task_explainer(state, state_mask, task) # [bs, d|n], [bs, n, d]
-        
-        phi_bar = ((phi_next - phi_cur).transpose(-1, -2) * mixing_n.view(bs, 1, 1, -1)).sum(-1)   # [bs, T-1, d_phi]
+        phi_tilde = (phi_next - phi_cur).transpose(-1, -2)
+        # mixing_n = mixing_n.view(bs, 1, 1, -1)
+        mixing_n = mixing_n[:, :, :-1].transpose(-1, -2).unsqueeze(-2)
+        phi_bar = (phi_tilde * mixing_n).sum(-1)   # [bs, T-1, d_phi]
         # r_hat = (phi_bar * mixing_w.view(bs, 1, -1)).sum(-1, keepdim=True) # [bs, T-1, 1]
         
         # 2. invdyn
@@ -527,19 +563,20 @@ class ValueModule(nn.Module):
         self.rnn = nn.GRUCell(self.entity_embed_dim * self.args.head, self.args.rnn_hidden_dim)
 
         ## attack action networks
-        self.no_attack_psi = FCNet(self.hidden_dim + self.n_actions_no_attack, self.phi_dim)
-        self.attack_psi = FCNet(2 * self.args.rnn_hidden_dim, self.phi_dim)
+        self.no_attack_psi = FCNet(self.hidden_dim + self.phi_dim + self.n_actions_no_attack, self.phi_dim, hidden_layer=3, use_leaky_relu=False)
+        self.attack_psi = FCNet(2 * self.args.rnn_hidden_dim + self.phi_dim, self.phi_dim, hidden_layer=3, use_leaky_relu=False)
         self.enemy_embed = nn.Sequential(
             nn.Linear(obs_en_dim, self.args.rnn_hidden_dim),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Linear(self.args.rnn_hidden_dim, self.args.rnn_hidden_dim)
         )
     
-    def forward(self, attn_feature, enemy_feats, hidden_state):
+    def forward(self, attn_feature, enemy_feats, hidden_state, mixing_w):
         h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
         h = self.rnn(attn_feature, h_in) # (bsn, hid)
+        traj_policy_emb = th.cat([h, mixing_w], dim=-1) # (bsn, hid+d_phi)
         
-        psi_input = h.unsqueeze(1).repeat(1, self.n_actions_no_attack, 1) # (bsn, n_no_attack, hid)
+        psi_input = traj_policy_emb.unsqueeze(1).repeat(1, self.n_actions_no_attack, 1) # (bsn, n_no_attack, hid)
         id_action_no_attack = self.id_action_no_attack.repeat(h.size(0), 1, 1)
         psi_input = th.cat([psi_input, id_action_no_attack], dim=-1)
         wo_action_psi = self.no_attack_psi(psi_input) # (bsn, n_no_attack, d_phi)
@@ -549,7 +586,7 @@ class ValueModule(nn.Module):
             attack_action_input = th.cat(
                 [
                     enemy_feature,
-                    h.unsqueeze(1).repeat(1, enemy_feats.size(1), 1)
+                    traj_policy_emb.unsqueeze(1).repeat(1, enemy_feats.size(1), 1),
                 ],
                 dim=-1,
             )  # (bsn, n_enemy, 2*hid)
@@ -563,17 +600,12 @@ class ValueModule(nn.Module):
 # ---------------------- Other network utilities ----------------------
 
 class FCNet(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_layer=2, hidden_dim=512, use_leaky_relu=True, use_last_activ=False, use_dropout=0.):
+    def __init__(self, in_dim, out_dim, hidden_layer=2, hidden_dim=512, use_leaky_relu=True, use_last_activ=False):
         super().__init__()
-        assert 0 <= use_dropout <= 1, 'to be used as dropout rate'
             
         layers = [nn.Linear(in_dim, hidden_dim), nn.LeakyReLU() if use_leaky_relu else nn.ReLU()]
-        if use_dropout != 0:
-            layers.extend([nn.Dropout(use_dropout)])
         for l in range(hidden_layer - 1):
             layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.LeakyReLU() if use_leaky_relu else nn.ReLU()])
-            if use_dropout != 0:
-                layers.extend([nn.Dropout(use_dropout)])
         layers.append(nn.Linear(hidden_dim, out_dim))
         
         if use_last_activ:

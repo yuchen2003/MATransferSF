@@ -423,6 +423,177 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-co
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="phimix pre thres w_reg fix" &
 wait
 
-CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf pre" &
-CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf pre" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=1234 --use_wandb=True --wandb_note="lbf pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=2345 --use_wandb=True --wandb_note="lbf pre" &
 wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=1234 --use_wandb=True --wandb_note="lbf pre weak lr sched" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=2345 --use_wandb=True --wandb_note="lbf pre weak lr sched" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=1234 --use_wandb=True --wandb_note="lbf pre cos lr sched" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=2345 --use_wandb=True --wandb_note="lbf pre cos lr sched" &
+wait
+#* 到目前位置1/T调度最有效
+
+sleep 2h
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=1234 --use_wandb=True --wandb_note="lbf pre exp lr sched" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=2345 --use_wandb=True --wandb_note="lbf pre exp lr sched" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=2345 --use_wandb=True --wandb_note="lbf pre 1_T lr sched ms-fixed" &
+wait
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=2345 --use_wandb=True --wandb_note="lbf pre exp lr sched ms-fixed" &
+wait
+#* exp-lr不稳定
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=2345 --use_wandb=True --wandb_note="lbf pre lin-decay lr sched" &
+wait
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=2345 --use_wandb=True --wandb_note="lbf pre quad-decay lr sched"
+#* 这些也行，但1/T确实收敛很快; linear也能降，解释不了用lin写
+#* linear decay在3p2f上aloss降得更低, 可能是因为lr缩减太快，导致有点欠拟合
+#- 0412先这样吧, 1/T快但是野路子，需要调，参数敏感；lin慢一点但loss更低，有支撑；
+#* 1/T稳定，lin可能是过拟合，会炸
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=3407 --use_wandb=True --wandb_note="lbf pre"
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="lbf off const lr" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="lbf off const lr" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=1 --use_wandb=True --wandb_note="lbf off 1/T lr" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=2 --use_wandb=True --wandb_note="lbf off 1/T lr" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre modulate phi" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 pre modulate phi" &
+wait
+CUDA_VISIBLE_DEVICES=2 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 off relu" --checkpoint_path= --load_step=300005 &
+CUDA_VISIBLE_DEVICES=3 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 off relu" --checkpoint_path= --load_step=300005 &
+wait
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre no scale phi"
+#* w_reg_Gate提高：应遵循某种够用原则，即使得w_reg总是处于Gate之下或者稳定在gate附近；更大的gate允许更宽范围的w，这对aloss下降也有帮助
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre no scale large gate" --save_model_interval=50000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 pre no scale large gate" --save_model_interval=50000 &
+wait
+# xx关于off训练任务无性能，测试任务有性能的原因猜测：预训练阶段w值域受约束没有很好对齐奖励，sc2中的奖励存在较大值，这种对齐不足使得尽管loss很小，但实际上对稀疏而较大的奖励值预测不足，从而导出的psi以及策略较差。已学习任务读取错误对齐的w用来拟合奖励和Q函数偏差较大，未学习任务通过对已对齐的phi，基于固定均匀初始化的w进行组合仍然能导出对应的较好值函数与策略。xx
+#* controller执行里面有个bug
+#! mixing_n的问题，已修复
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 off relu fixed exec" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/tr_sf/seed_4_tr_sf_2025-04-14_12-56-47/models/pretrain/ --load_step=100002 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 off relu fixed exec" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/tr_sf/seed_4_tr_sf_2025-04-14_12-56-47/models/pretrain/ --load_step=100002 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 off piecewise linear mixer" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 off piecewise linear mixer" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 off linear mixer" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 off linear mixer" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 off independent" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 off independent" &
+wait
+#* linear, leakyrelu 挺好; 
+#* 0414 off 大约5～10k步收敛
+
+# ablate phi_dim for sc2_test
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre phi 64" --phi_dim=64 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 pre phi 64" --phi_dim=64 &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre phi 32" --phi_dim=32 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 pre phi 32" --phi_dim=32 &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre phi 24" --phi_dim=24 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 pre phi 24" --phi_dim=24 &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre phi 16" --phi_dim=16 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 pre phi 16" --phi_dim=16 &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre phi 8" --phi_dim=8 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 pre phi 8" --phi_dim=8 &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=4 --use_wandb=True --wandb_note="sc2 pre phi 4" --phi_dim=4 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_transfer --task-config=sc2_test --seed=5 --use_wandb=True --wandb_note="sc2 pre phi 4" --phi_dim=4 &
+wait
+#* 仍然可以通过“冗余维度”来解释：较小的维度会让rloss或aloss一者更好而另一者较差，rloss更差时wreg也会更差，二更大的维度则使得三个loss都接近理想。
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_zerg --task-config=sc2_v2_test_zerg --seed=4 --use_wandb=True --wandb_note="sc2v2-zerg pre" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_zerg --task-config=sc2_v2_test_zerg --seed=5 --use_wandb=True --wandb_note="sc2v2-zerg pre" &
+wait
+#* 除开mixingn之外，w本身可能有一些问题，大量的正负相消是否也是一种过拟合？w只该表示重要性而不去进行正负翻转；实际上所有phi分量是有益的
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_v2_zerg --task-config=sc2_v2_test_zerg --seed=4 --use_wandb=True --wandb_note="sc2v2-zerg off w>0" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_4_tr_sf_2025-04-15_19-12-01/models/pretrain/ --load_step=200005 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_v2_zerg --task-config=sc2_v2_test_zerg --seed=5 --use_wandb=True --wandb_note="sc2v2-zerg off w>0" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_4_tr_sf_2025-04-15_19-12-01/models/pretrain/ --load_step=200005 &
+wait
+#* 已解决；更稳定了一点
+
+# 开始调online
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf pre"
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf off" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf off" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf off lr-0.001" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf off lr-0.001" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf adapt" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf adapt" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf adapt no w_eff" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf adapt no w_eff" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf adapt mixing_w" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf adapt mixing_w" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf adapt all-1" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf adapt all-1" &
+wait
+#* 都提升不了，性能差异不大，w上的细微差异并不能使策略有大幅改变；全1和mixningw更稳定; 可能是源于normed form所给的稠密w并不适合于直接微调w。
+# 验证下是否是w表达能力的问题：设定Gate到很大
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf pre XL Gate" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf pre XL Gate" &
+wait
+#* 也许方差缩减性（同样起源于normed form）代替了w_reg? w_reg本身有控制学习误差的效果，可能对应倾向于保守的表征和激进的表征（值域范围明显扩大）；无限制时w->phi/r, phi的稳定性可能通过id以及与w互作用保持
+#* 应该是normed form本身的性质，w和phi都能很好地收敛
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf off XL Gate" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-16_14-32-55/models/pretrain/ --load_step=200005 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf off XL Gate" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-16_14-32-55/models/pretrain/ --load_step=200005 &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf adapt XL Gate" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_adapt --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf adapt XL Gate" &
+wait
+#* 没啥用
+
+# test online (normal Gate)
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf on normal Gate" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf on normal Gate" &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf on less online mt" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf on less online mt" &
+wait
+#* 全架构调会不稳定
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf on no explore" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf on no explore" &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf on with phi" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf on with phi" &
+wait
+
+# added w as psi cond
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf pre only w_1"
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf pre for wcond psi"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf pre std-r"
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf off w_1 wcond psi" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf off w_1 wcond psi" &
+wait
+
+#* w cond 加在GRU前容易爆炸；可能加在GRU后MLP前: # TODO 参考USFA17页重新实现

@@ -7,11 +7,12 @@ from modules.mixers.transfer.tr_dmaq_qatten import MTDMAQQattnMixer
 import torch as th
 import torch.nn as nn
 from torch.optim import RMSprop, Adam, SGD
-# from torch.optim.lr_scheduler import 
+from torch.optim.lr_scheduler import PolynomialLR
 from components.standarize_stream import RunningMeanStd
 import torch.nn.functional as F
 import numpy as np
 from utils.calc import compute_q_values
+from utils.embed import pad_shape
 
 class TransferSFLearner:
     def __init__(self, mac, logger, main_args) -> None:
@@ -29,7 +30,6 @@ class TransferSFLearner:
         self.phi_dim = main_args.phi_dim
         self.w_range_reg = main_args.w_range_reg
         self.w_range_gate = main_args.w_range_gate
-        self.w_div_reg = main_args.w_div_reg
         self.r_lambda = main_args.r_lambda
 
         self.mixer = MTDMAQQattnMixer(self.surrogate_decomposer, main_args)
@@ -62,7 +62,9 @@ class TransferSFLearner:
                 
             case _:
                 raise ValueError("Invalid optimiser type", self.main_args.optim_type)
-        self.pre_lr_decay = main_args.pretrain_lr_decay_rate / main_args.pretrain_steps
+        
+        if main_args.train_mode == 'pretrain':
+            self.lr_decay_rate = main_args.lr_decay_rate
         
         # a little wasteful to deepcopy (e.g. duplicates action selector), but should work for any MAC
         self.target_mac = copy.deepcopy(mac)
@@ -88,10 +90,10 @@ class TransferSFLearner:
             for task in self.task2args.keys():
                 self.task2rew_ms[task] = RunningMeanStd(shape=(1, ), device=device)
                 
-        # FIXME temporal codes
+        # NOTE codes for analysis
         self.w_records = {}
         for task in self.task2args.keys():
-            self.w_records[task] = []
+            self.w_records[task] = [] # for visualizing task embeddings
     
     def pretrain(self, batch, t_env: int, episode_num: int, task: str):
         states = batch["state"]
@@ -104,15 +106,21 @@ class TransferSFLearner:
         mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
         
         phi_bar, action_pred, mixing_w = self.mac.pretrain_forward(states, state_mask, obs, task)
+        
         # self.w_records[task].append(mixing_w)
-        self.mac.update_weight(mixing_w, task)
+        # print(t_env)
+        
+        if self.main_args.standardise_rewards:
+            self.task2rew_ms[task].update(rewards)
+            rewards = (rewards - self.task2rew_ms[task].mean) / th.sqrt(self.task2rew_ms[task].var)
+    
+        w_mean, w_var = self.mac.update_weight(mixing_w, task)
         r_loss = ((phi_bar - rewards * mixing_w.unsqueeze(1)).square() * mask).mean()
         mask = mask.unsqueeze(-1).repeat(1, 1, *actions_onehot.shape[-2:])
         a_loss = F.binary_cross_entropy(action_pred * mask, actions_onehot * mask)
         sgn = (mixing_w.detach() >= 0).float() * 2 - 1
         w_range_reg = (1 / (mixing_w + (1e-5) * sgn)).abs().mean() + mixing_w.abs().mean()
         w_range_reg_gated = w_range_reg * (w_range_reg.detach() >= self.w_range_gate).float()
-        # NOTE 进入正常优化阶段基本不会出现w坍缩，这个reg稀疏地被用到
         loss = a_loss + self.r_lambda * r_loss + self.w_range_reg * w_range_reg_gated
         
         self.optimiser.zero_grad()
@@ -122,24 +130,31 @@ class TransferSFLearner:
         self.total_training_steps += 1
         self.task2train_info[task]["training_steps"] += 1
         
+        # 1. linear decay
+        # if t_env >= 5000:
+        #     self.lr_sched.step()
+        
         if t_env - self.task2train_info[task]["log_stats_t"] >= self.task2args[task].learner_log_interval:
             self.logger.log_stat(f"{task}/r_loss", r_loss.item(), t_env)
             self.logger.log_stat(f"{task}/a_loss", a_loss.item(), t_env)
             self.logger.log_stat(f"{task}/w_reg", w_range_reg.item(), t_env)
             self.logger.log_stat(f"{task}/w_std", mixing_w.std(0).mean().item(), t_env)
-            self.logger.log_stat(f"{task}/w_rec_std", np.mean(np.sqrt(self.mac.agent.task_explainer.task2w_ms[task].var)), t_env)
+            self.logger.log_stat(f"{task}/w_rec_std", np.mean(np.sqrt(w_var)), t_env)
             self.logger.log_stat(f"{task}/loss", loss.item(), t_env)
             self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
             self.task2train_info[task]["log_stats_t"] = t_env
             if grad_norm.item() == 0:
                 print("ERROR... GRADS VANISH.")
                 exit(-1)
+            # print("learning rate: ", self.lr_sched.get_lr())
                 
+            # or 2. 1/T decay
             for param_group in self.optimiser.param_groups:
-                param_group['lr'] = self.main_args.lr / (1 + self.pre_lr_decay * t_env)
+                param_group['lr'] = self.main_args.lr / (1 + self.lr_decay_rate * t_env)
+            print(self.main_args.lr / (1 + self.lr_decay_rate * t_env))
     
-    def train(self, batch, t_env: int, episode_num: int, task: str, mode: str):
-        ''' mode = | offline | online | adapt | '''
+    def train(self, batch, t_env: int, episode_num: int, task: str, mode='offline'):
+        ''' mode = | offline | '''
         bs = batch.batch_size
         n_agents = self.task2args[task].n_agents
         rewards = batch["reward"][:, :-1] # (bs, T-1, 1)
@@ -158,20 +173,23 @@ class TransferSFLearner:
         
         # Calculate estimated Q-Values -> psi-values, Q-values
         psi_out = []
+        mixing_w, mixing_n = self.mac.explain_task(task, states, state_mask)
+        w_mean, w_var = self.mac.update_weight(mixing_w, task)
+        
+        # self.w_records[task].append(mixing_w)
+        # print(t_env)
+        
         self.mac.init_hidden(batch.batch_size, task)
+        # psi_w_in = mixing_w.detach() if mode == 'offline' else mixing_w
+        psi_w_in = mixing_w.detach()
         for t in range(batch.max_seq_length):
-            psi = self.mac.forward(batch, t=t, task=task)
+            psi = self.mac.forward(batch, t=t, task=task, mixing_w=psi_w_in)
             psi_out.append(psi)
         psi_out = th.stack(psi_out, dim=1) # (bs, T, n, n_act, d_phi)
-        
-        if mode == 'offline':
-            mac_out = psi_out.transpose(-1, -2) # (bs, T, n, d_phi, n_act)
-            avail_actions = avail_actions.unsqueeze(-2).expand_as(mac_out)
-            actions = actions.unsqueeze(-2).expand(-1, -1, -1, self.phi_dim, -1)
-        else:
-            mac_out = 0 # TODO
+        mac_out = psi_out.transpose(-1, -2) # (bs, T, n, d_phi, n_act)
+        avail_actions = avail_actions.unsqueeze(-2).expand_as(mac_out)
+        actions = actions.unsqueeze(-2).expand(-1, -1, -1, self.phi_dim, -1)
         mac_out[avail_actions == 0] = -9999999
-        # max_action_qvals = mac_out[:, :-1].max(dim=3)[0]
 
         # Pick the Q-Values for the actions taken by each agent
         chosen_action_na_qvals = th.gather(mac_out[:, :-1], dim=-1, index=actions).squeeze(-1) # (bs, T-1, n, d_phi)
@@ -180,7 +198,7 @@ class TransferSFLearner:
         target_psi_out = []
         self.target_mac.init_hidden(batch.batch_size, task)
         for t in range(batch.max_seq_length):
-            target_psi = self.target_mac.forward(batch, t=t, task=task)
+            target_psi = self.target_mac.forward(batch, t=t, task=task, mixing_w=psi_w_in)
             target_psi_out.append(target_psi)
         # We don't need the first timesteps Q-Value estimate for calculating targets
         target_psi_out = th.stack(target_psi_out[1:], dim=1) # (bs, T-1, n, n_act, d_phi)
@@ -188,60 +206,62 @@ class TransferSFLearner:
 
         # Mask out unavailable actions
         target_mac_out[avail_actions[:, 1:] == 0] = -9999999
-        # target_max_action_qvals = target_mac_out.max(dim=3)[0]
 
         # Max over target Q-Values
         if self.main_args.double_q:
             # Get actions that maximise live Q (for double q-learning)
             mac_out_detach = mac_out.clone().detach()
-            # mac_out_detach[avail_actions == 0] = -9999999 already done before
             cur_max_actions = mac_out_detach.max(dim=-1, keepdim=True)[1]
             target_max_na_qvals = th.gather(target_mac_out, -1, cur_max_actions[:, 1:]).squeeze(-1)
-            # cons_max_qvals = th.gather(mac_out, 3, cur_max_actions).squeeze(3)
         else:
             target_max_na_qvals = target_mac_out.max(dim=-1)[0]
 
         # Agent mixing: (bs, T-1, n, d_phi) -> (bs, T-1, d_phi)
-        chosen_action_qvals = self.mixer(chosen_action_na_qvals, states[:, :-1], self.task2decomposer[task])
-        target_max_qvals = self.target_mixer(target_max_na_qvals, states[:, 1:], self.task2decomposer[task])
-        # CHECK: use mixing_n instead, with V net
-        
-        if self.main_args.standardise_returns:
-            target_max_qvals = target_max_qvals * th.sqrt(self.task2ret_ms[task].var) + self.task2ret_ms[task].mean
-            
-        # Calculate 1-step Q-Learning targets
-        if mode == 'offline':
-            mixing_w, mixing_n = self.mac.explain_task(task, states, state_mask)
-            phi_out = self.mac.phi_forward(obs, task).transpose(-1, -2) # [bs, T-1, d_phi, n]
-            phi_bar = (phi_out * mixing_n.view(bs, 1, 1, -1)).sum(-1) # [bs, T-1, d_phi]
-            targets = phi_bar + self.main_args.gamma * (1 - terminated) * target_max_qvals
+        if isinstance(self.mixer, MTDMAQQattnMixer):
+            max_action_qvals = mac_out[:, :-1].max(dim=-1)[0]
+            target_max_action_qvals = target_mac_out.max(dim=-1)[0]
+            chosen_action_qvals = self.mixer(chosen_action_na_qvals, max_action_qvals, states[:, :-1], self.task2decomposer[task])
+            target_max_qvals = self.target_mixer(target_max_na_qvals, target_max_action_qvals, states[:, 1:], self.task2decomposer[task])
         else:
-            targets = rewards + self.main_args.gamma * (1 - terminated) * target_max_qvals
-
-        # Td-error
-        td_error = (chosen_action_qvals - targets.detach())
-
-        # 0-out the targets that came from padded data
-        mask = mask.expand_as(td_error)
-        masked_td_error = td_error * mask
-
-        # Normal L2 loss, take mean over actual data (1, 2.1)
-        td_loss = (masked_td_error ** 2).sum() / mask.sum()
-
-        loss = td_loss
+            chosen_action_qvals = self.mixer(chosen_action_na_qvals, states[:, :-1], self.task2decomposer[task])
+            target_max_qvals = self.target_mixer(target_max_na_qvals, states[:, 1:], self.task2decomposer[task])
+            
+        loss = 0
+        # Calculate 1-step Q-Learning targets
         
-        # CQL: TO handle ood in offRL; may also handle in phi learning
-        cql_loss = th.zeros(1)
         if mode == 'offline':
+            phi_tilde = self.mac.phi_forward(obs, task).transpose(-1, -2) # [bs, T-1, d_phi, n]
+            mixing_n = mixing_n[:, :, :-1].transpose(-1, -2).unsqueeze(-2)
+            phi_bar = (phi_tilde * mixing_n).sum(-1)
+            phi = phi_bar
+        elif mode == 'online':
+            # r_loss = ((phi_bar.detach() - rewards * mixing_w.unsqueeze(1)).square() * mask).mean()
+            # sgn = (mixing_w.detach() >= 0).float() * 2 - 1
+            # w_range_reg = (1 / (mixing_w + (1e-5) * sgn)).abs().mean() + mixing_w.abs().mean()
+            phi = rewards * mixing_w.unsqueeze(1)
+            
+        targets = phi + self.main_args.gamma * (1 - terminated) * target_max_qvals
+        td_error = (chosen_action_qvals - targets.detach())
+        
+        # 0-out the targets that came from padded data
+        td_mask = mask.expand_as(td_error)
+        masked_td_error = td_error * td_mask
+
+        # Normal L2 loss, take mean over actual data
+        td_loss = (masked_td_error ** 2).sum() / td_mask.sum()
+
+        loss = loss + td_loss
+        
+        mode_cql = ['offline']
+        if mode in mode_cql:
             if self.main_args.cql_type == 'base':
                 # CQL-error
                 cql_error = th.logsumexp(mac_out[:, :-1], dim=-1) - chosen_action_na_qvals
                 cql_mask = mask.unsqueeze(-2).expand_as(cql_error)
-                cql_loss = (cql_error * cql_mask).sum() / mask.sum() # better use mask.sum() instead of cql_mask.sum()
-            else:
-                raise ValueError("Unknown cql_type: {}".format(self.main_args.cql_type))
-            loss += self.main_args.cql_alpha * cql_loss
-        
+                cql_loss = (cql_error * cql_mask).sum() / cql_mask.sum()
+                
+                loss = loss + self.main_args.cql_alpha * cql_loss
+
         # Optimise
         self.optimiser.zero_grad()
         loss.backward()
@@ -260,26 +280,53 @@ class TransferSFLearner:
             self.logger.log_stat(f"{task}/loss", loss.item(), t_env)
             self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
             self.logger.log_stat(f"{task}/td_loss", td_loss.item(), t_env)
-            # self.logger.log_stat(f"{task}/psi_td_loss", psi_td_loss.item(), t_env)
-            mask_elems = mask.sum().item()
-            # self.logger.log_stat(f"{task}/td_error_abs", (masked_td_error.abs().sum().item()/mask_elems), t_env)
-            if mode == 'offline':
+            if mode in mode_cql:
                 self.logger.log_stat(f"{task}/cql_loss", cql_loss.item(), t_env)
-            self.logger.log_stat(f"{task}/q_taken_mean", (chosen_action_qvals * mask).sum().item()/(mask_elems * n_agents), t_env)
-            self.logger.log_stat(f"{task}/target_mean", (targets * mask).sum().item()/(mask_elems * n_agents), t_env)
-            # true Q-value
-            true_q = (compute_q_values(rewards, self.main_args.gamma) * mask).sum().item()/(mask_elems * n_agents)
+            if mode == "online":
+                self.logger.log_stat(f"{task}/r_loss", r_loss.item(), t_env)
+                self.logger.log_stat(f"{task}/w_reg", w_range_reg.item(), t_env)
+                self.logger.log_stat(f"{task}/w_rec_std", np.mean(np.sqrt(w_var)), t_env)
+            
+            chosen_qs_global = ((1 / (mixing_w * self.phi_dim)).view(bs, 1, self.phi_dim) * chosen_action_qvals).sum(-1)
+            q_mask = mask.squeeze(-1)
+            self.logger.log_stat(f"{task}/esti_q_mean", (chosen_qs_global * q_mask).sum().item() / q_mask.sum().item(), t_env)
+            
+            true_q = (compute_q_values(rewards, self.main_args.gamma) * mask).sum().item() / mask.sum().item()
             if self.ema_true_q is None:
                 self.ema_true_q = true_q
-            self.ema_true_q = self.ema_true_q * 0.95 + true_q * 0.05
+            self.ema_true_q = self.ema_true_q * 0.9 + true_q * 0.1
             self.logger.log_stat(f"{task}/true_Q", self.ema_true_q, t_env)
             
-            # if task not in list(self.last_weight.keys()):
-            #     self.last_weight[task] = weight
-            # self.logger.log_stat(f"{task}/weight_tvd", .5 * (weight - self.last_weight[task]).abs().sum().item(), t_env)
-            # self.last_weight = weight
-            # self.logger.log_stat(f"{task}/weight_actv", w_mean.argmax().item(), t_env)
-
+            self.task2train_info[task]["log_stats_t"] = t_env
+        
+    def adapt(self, batch, t_env: int, episode_num: int, task: str):
+        ''' mode = | adapt | '''
+        rewards = batch["reward"][:, :-1] # (bs, T-1, 1)
+        states = batch["state"] # (bs, T-1, ds)
+        state_mask = batch["filled"]
+        obs = batch["obs"]
+        terminated = batch["terminated"][:, :-1].float()
+        mask = batch["filled"][:, :-1].float()
+        mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
+        
+        # 1. phi
+        mixing_w, mixing_n = self.mac.explain_task(task, states, state_mask)
+        phi_tilde = self.mac.phi_forward(obs, task).transpose(-1, -2) # [bs, T-1, d_phi, n]
+        mixing_n = mixing_n[:, :, :-1].transpose(-1, -2).unsqueeze(-2)
+        phi_bar = (phi_tilde * mixing_n).sum(-1) # [bs, T-1, d_phi]
+        
+        # 2. solve and store w
+        w_hat = (rewards * phi_bar).mean(1).abs() / (rewards.square().mean(1) + 1e-5)
+        w_hat_eff = w_hat[~(rewards == 0).all(1).squeeze(-1)] # exclude r=0 trajs
+        w_mean, w_var = self.mac.update_weight(w_hat_eff, task)
+        # w_mean, w_var = self.mac.update_weight(mixing_w, task)
+        
+        rloss = ((phi_bar - rewards * mixing_w.unsqueeze(1)).square() * mask).mean()
+        
+        if t_env - self.task2train_info[task]["log_stats_t"] >= self.task2args[task].learner_log_interval:
+            self.logger.log_stat(f"{task}/rloss", rloss.item(), t_env)
+            self.logger.log_stat(f"{task}/w_std", np.mean(np.sqrt(w_var)), t_env)
+            
             self.task2train_info[task]["log_stats_t"] = t_env
         
     def _update_targets_hard(self):
@@ -307,12 +354,14 @@ class TransferSFLearner:
         self.mac.save_models(path)
         if self.mixer is not None:
             th.save(self.mixer.state_dict(), "{}/mixer.th".format(path))
+            th.save(self.target_mixer.state_dict(), "{}/target_mixer.th".format(path))
         
     def load_models(self, path):
         # self.optimiser.load_state_dict(th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage))
         self.mac.load_models(path)
-        # Not quite right but I don't want to save target networks
         self.target_mac.load_models(path)
-        if self.mixer is not None:
-            self.mixer.load_state_dict(th.load("{}/mixer.th".format(path), map_location=lambda storage, loc: storage))
+        if self.main_args.train_mode in ['online', 'adapt']:
+            if self.mixer is not None:
+                self.mixer.load_state_dict(th.load("{}/mixer.th".format(path), map_location=lambda storage, loc: storage))
+                self.target_mixer.load_state_dict(th.load("{}/target_mixer.th".format(path), map_location=lambda storage, loc: storage))
             

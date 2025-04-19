@@ -2,9 +2,9 @@
 
 # use epsilon greedy action selector
 action_selector: "epsilon_greedy"
-epsilon_start: 0.3
-epsilon_finish: 0.0
-epsilon_anneal_time: 500 # TEST 可以适当用一下，辅助表现不好的任务探索
+epsilon_start: 1
+epsilon_finish: 0.05
+epsilon_anneal_time: 50000
 
 runner: "mt_episode" # the same way to handle multi-task info in runners
 
@@ -14,50 +14,60 @@ buffer_size: 5000
 target_update_interval_or_tau: 0.005
 
 # learner />
-agent_output_type: "q" # regard psi as q's
+agent_output_type: "q" # regard psi as q'ds
 learner: "tr_sf_learner"
+## for pretrain
+r_lambda: 0.001
+w_range_reg: 0.0001
+w_range_gate: 30 # w_reg lower bound == 2， lbf:10, smacv1v2:20
+## for RL
 double_q: True
-# mixer: tr_dmaq_qatten # NOTE vdn(tr_vdn), vdn-with-bias, 1-qmix(tr_qatten), qplex(tr_dmaq_qatten)
+w_std_lambda: 0.1
+# mixer: tr_dmaq_qatten
 mixer: tr_qatten
-task_emb_std: 0.1
-cql_alpha: 1. # largely depend on the quality of dataset
+cql_alpha: 0.1 # largely depend on the quality of dataset
 cql_type: "base"
 
-# qmix
+# hypernet
 mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
 
 # /> for LBF
-# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert+lbforaging:Foraging-5x5-2p-3f-coop-v2-expert+lbforaging:Foraging-5x5-4p-2f-coop-v2-expert/tr_sf/seed_2_tr_sf_2025-03-20_20-09-53/models/offline
-# load_step: 50005
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_5_tr_sf_2025-04-16_11-06-45/models/offline/
+# load_step: 10005
 # </ for LBF
 
 # /> for smac
-checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/3m-expert+4m-expert/tr_sf/seed_2_tr_sf_2025-03-30_10-20-46/models/offline
-load_step: 50005
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/3m-expert+4m-expert/tr_sf/seed_2_tr_sf_2025-03-30_10-20-46/models/offline
+# load_step: 50005
 # </ for smac
 
 # /> for smacv2
 # </ for smacv2
 
 ckpt_stage: 2
-online_train_steps: 20005
-test_interval: 200
-log_interval: 200
-runner_log_interval: 200
-learner_log_interval: 200
+online_train_steps: 2000005 # ~12000updates
+test_interval: 10000
+log_interval: 10000
+runner_log_interval: 10000
+learner_log_interval: 10000 # ~200updates (50traj_len x 200)
+save_model_interval: 500000
 
 # </ learner
 
 # agent type
 agent: "tr_sf_rnn"
+phi_dim: 64
+invdyn_cond_type: "cat"
+use_residual_agent: True
+# use_residual_agent: False
 
 # mac
 mac: "tr_basic_mac"
 
 standardise_returns: False
-standardise_rewards: True
+standardise_rewards: False
 
 # params about observation decomposition
 id_length: 4

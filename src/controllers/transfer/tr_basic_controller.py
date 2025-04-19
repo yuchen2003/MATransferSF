@@ -4,6 +4,7 @@ from components.action_selectors import REGISTRY as action_REGISTRY
 import torch as th
 import numpy as np
 import torch.nn.functional as F
+from copy import deepcopy
 
 class TrBasicMAC:
     def __init__(self, all_tasks, train_tasks, trans_tasks, train_mode, task2scheme, task2args, main_args):
@@ -92,8 +93,9 @@ class TrBasicMAC:
     def select_actions(self, ep_batch, t_ep, t_env, task, bs=slice(None), test_mode=False): # for execution
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         agent_outputs = []
-        cur_w, _ = self.explain_task(task, None, None, test_mode) # here test_mode === True
-        psi = self.forward(ep_batch, t_ep, task, test_mode)
+        mixing_w, _ = self.explain_task(task, None, None, test_mode) # here test_mode === True
+        cur_w = 1 / (mixing_w * self.phi_dim)
+        psi = self.forward(ep_batch, t_ep, task, mixing_w, test_mode)
         # psi = psi.transpose(-1, -2)
         agent_outputs = (psi * cur_w).sum(-1)
 
@@ -107,11 +109,14 @@ class TrBasicMAC:
     def phi_forward(self, obs, task):
         return self.agent.phi_forward(obs, task)
     
-    def forward(self, ep_batch, t, task, test_mode=False): # for training offline|online
+    def forward(self, ep_batch, t, task, mixing_w, test_mode=False): # for training offline|online
         # NOTE online forward: train the same psi network for unseen task weights
         agent_inputs = self._build_inputs(ep_batch, t, task)
 
-        self.hidden_states, psi = self.agent(agent_inputs, self.hidden_states, task)
+        if self.main_args.use_residual_agent:
+            self.hidden_states, self.resi_h, psi = self.agent(agent_inputs, self.hidden_states, task, mixing_w, self.resi_h)
+        else:
+            self.hidden_states, psi = self.agent(agent_inputs, self.hidden_states, task, mixing_w)
         # psi: (bs, n, n_act, d_phi)
 
         # Softmax the agent outputs if they're policy logits
@@ -144,10 +149,14 @@ class TrBasicMAC:
         return self.agent.explain_task(task, state, state_mask, test_mode)
 
     def update_weight(self, w, task):
-        self.agent.task_explainer.task2w_ms[task].update(w.cpu().detach().numpy())
+        recorder = self.agent.task_explainer.task2w_ms[task]
+        recorder.update(w.cpu().detach().numpy())
+        return recorder.mean, recorder.var
     
     def init_hidden(self, batch_size, task):
         self.hidden_states = self.agent.init_hidden().expand(batch_size * self.task2n_agents[task], -1)
+        if self.main_args.use_residual_agent:
+            self.resi_h = self.agent.init_hidden().expand(batch_size * self.task2n_agents[task], -1)
 
     def parameters(self):
         return self.agent.parameters()

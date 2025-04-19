@@ -67,7 +67,11 @@ class MTDMAQQattnMixer(nn.Module):
     def forward(self, agent_qs, max_qs, states, task_decomposer):
         # agent_qs: [batch_size, seq_len, n_agents, d_phi]
         # states: [batch_size, seq_len, state_dim]
-        bs, seq_len, n_agents = agent_qs.size()
+        if len(agent_qs.shape) == 4:
+            bs, seq_len, n_agents, phi_dim = agent_qs.size()
+        else:
+            bs, seq_len, n_agents = agent_qs.size()
+            phi_dim = 1
         n_enemies = task_decomposer.n_enemies
         n_entities = n_agents + n_enemies
 
@@ -97,32 +101,33 @@ class MTDMAQQattnMixer(nn.Module):
         proj_value = entity_embed.reshape(bs * seq_len, n_entities, self.entity_embed_dim)
         out = th.bmm(score, proj_value) # (bs * seq_len, n_entities, entity_embed_dim)
         # mean pooling over entity
-        out = out.mean(dim=1) # (bs * seq_len, entity_embed_dim)
+        out = out.mean(dim=1).reshape(bs, seq_len, self.entity_embed_dim)
 
         # concat timestep information
         if self.state_timestep_number:
             raise Exception(f"Not Implemented")
 
         entity_mixing_input = th.cat(
-            [out.unsqueeze(1).repeat(1, n_agents, 1), 
-             ally_embed.view(bs * seq_len, n_agents, -1)], 
+            [out.unsqueeze(2).repeat(1, 1, n_agents, 1), 
+             ally_embed], 
             dim=-1
-        )  # (bsT, n, x)
-        mixing_input = out
+        ).reshape(bs*seq_len, n_agents, -1)  # (bs, seq_len, n_agents, x)
+        mixing_input = out.reshape(bs*seq_len, -1)
 
-        agent_qs = agent_qs.reshape(bs * seq_len, -1)
-        max_qs = max_qs.reshape(bs * seq_len, -1)
-        w = th.abs(self.trfm_w(entity_mixing_input)).squeeze(-1) + 1e-10 # (bsT, n)
-        b = self.hyper_b_1(mixing_input) / n_agents # (bsT, 1)
+        agent_qs = agent_qs.reshape(bs * seq_len, n_agents, phi_dim)
+        max_qs = max_qs.reshape(bs * seq_len, n_agents, phi_dim)
+        w = th.abs(self.trfm_w(entity_mixing_input)) + 1e-10 # (bsT, n, 1)
+        b = self.hyper_b_1(mixing_input).unsqueeze(-1) / n_agents # (bsT, 1, 1)
         agent_qs = w * agent_qs + b
         max_qs = w * max_qs + b
-        adv_q = agent_qs - max_qs
+        adv_q = agent_qs - max_qs # [bsT, n, d_phi]
         
-        w1 = th.abs(self.hyper_w_1(entity_mixing_input)).squeeze(-1) + 1e-10
-        adv_tot = th.sum((w1 - 1.) * adv_q, dim=1) # (bs*seq_len)
+        w1 = th.abs(self.hyper_w_1(entity_mixing_input)) + 1e-10 # [bsT, n, 1]
+        # adv_tot = th.sum((w1 - 1.) * adv_q, dim=1) # (bs*seq_len)
+        adv_tot = th.bmm(adv_q.transpose(1, 2), (w1 - 1.)) # [bsT, d_phi, 1]
         
-        q_sum = agent_qs.sum(-1)
+        q_sum = agent_qs.sum(1).unsqueeze(-1)
         
-        q_tot = (adv_tot + q_sum).reshape(bs, seq_len, 1)
+        q_tot = (adv_tot + q_sum).reshape(bs, seq_len, -1)
         
         return q_tot

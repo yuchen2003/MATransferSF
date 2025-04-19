@@ -19,12 +19,11 @@ learner: "tr_sf_learner"
 ## for pretrain
 r_lambda: 1
 w_range_reg: 0.0001
-w_range_gate: 10 # w_reg lower bound == 2
+w_range_gate: 30 # w_reg lower bound == 2， lbf:30, smacv1v2:30
 ## for RL
-w_div_reg: 1
 double_q: True
-# mixer: tr_dmaq_qatten # NOTE vdn(tr_vdn), vdn-with-bias, 1-qmix(tr_qatten), qplex(tr_dmaq_qatten)
-mixer: tr_qatten
+mixer: tr_dmaq_qatten
+# mixer: tr_qatten
 task_emb_std: 0.1
 cql_alpha: 1. # largely depend on the quality of dataset
 cql_type: "base"
@@ -36,19 +35,27 @@ hypernet_embed: 64
 
 #* pretrain
 # /> for LBF
-
+# for visualizing mixing_w
+# checkpoint_path: /root/shared-nvme/xyc/MATransferSF/results/transfer/lbforaging/lbf_test/tr_sf/seed_2345_tr_sf_2025-04-12_21-34-30/models/pretrain
+# load_step: 260055
 # </ for LBF
 
-pretrain_lr_decay_rate: 300 # lr will decay to lr/(1+rate) upon pretrain_steps
-pretrain_steps: 300005
-pretrain_batch_size: 16
+# /> for SMACv2 (visualize)
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_4_tr_sf_2025-04-15_19-12-01/models/pretrain/
+# load_step: 200005
+# </ for SMACv2
+
+lr_decay_rate: 0.0005 # lr will decay to lr/(1 + rate * max_steps) upon pretrain_steps
+pretrain_steps: 500005
+pretrain_batch_size: 64
 
 ckpt_stage: 0
-lr: 0.005
+lr: 0.003
 test_interval: 1000
 log_interval: 1000
 runner_log_interval: 1000
 learner_log_interval: 1000
+save_model_interval: 200000
 
 # </ learner
 

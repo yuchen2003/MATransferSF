@@ -192,14 +192,19 @@ def run_sequential(args, logger):
     match args.ckpt_stage:
         case 0:
             train_mode = 'pretrain'
+            main_args.t_max = main_args.pretrain_steps
         case 1:
             train_mode = 'offline'
+            main_args.t_max = main_args.offline_train_steps
         case 2:
             train_mode = 'online'
+            main_args.t_max = main_args.online_train_steps
         case 3:
             train_mode = 'adapt'
+            main_args.t_max = main_args.online_train_steps
         case _:
             raise ValueError
+    main_args.train_mode = train_mode
     mac = mac_REGISTRY[main_args.mac](all_tasks, train_tasks, trans_tasks, train_mode, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
 
     learner = le_REGISTRY[main_args.learner](mac, logger, main_args)
@@ -241,7 +246,7 @@ def run_sequential(args, logger):
             evaluate_sequential(main_args, logger, task2runner)
             return
     
-    if args.ckpt_stage in [0, 1, 3]:
+    if args.ckpt_stage in [0, 1]:
         logger.console_logger.info("Beginning preparing offline datasets")
         task2offline_buffer = {}
         for task in train_tasks:
@@ -252,6 +257,19 @@ def run_sequential(args, logger):
                 data_path=main_args.tasks_offline_bottom_data_paths[task],
                 max_buffer_size=main_args.offline_max_buffer_size,
                 shuffle=main_args.offline_data_shuffle,
+            )
+            
+    if args.ckpt_stage in [2, 3]:
+        logger.console_logger.info("Beginning preparing online buffers")
+        task2online_buffer = {}
+        for task in trans_tasks:
+            task2online_buffer[task] = ReplayBuffer(
+                scheme=task2scheme[task],
+                groups=task2groups[task],
+                buffer_size=args.buffer_size,
+                max_seq_length=task2args[task].episode_limit + 1,
+                preprocess=task2preprocess[task],
+                device="cpu" if args.buffer_cpu_only else args.device,
             )
     
     # =======================
@@ -280,19 +298,6 @@ def run_sequential(args, logger):
     #  Online Transfer Stage
     # =======================
     if args.ckpt_stage == 2:
-        logger.console_logger.info("Beginning preparing online buffers")
-        # prepare online data buffer
-        task2online_buffer = {}
-        for task in trans_tasks:
-            task2online_buffer[task] = ReplayBuffer(
-                scheme=task2scheme[task],
-                groups=task2groups[task],
-                buffer_size=args.buffer_size,
-                max_seq_length=task2args[task].episode_limit + 1,
-                preprocess=task2preprocess[task],
-                device="cpu" if args.buffer_cpu_only else args.device,
-            )
-
         online_train_steps = args.online_train_steps
         logger.console_logger.info("Beginning online training for {} timesteps".format(online_train_steps))
         
@@ -304,10 +309,10 @@ def run_sequential(args, logger):
     #  Task Adaptation Only
     # =======================
     if args.ckpt_stage == 3:
-        adapt_steps = args.adapt_steps
+        adapt_steps = args.online_train_steps
         logger.console_logger.info("Beginning task adaptation for {} timesteps".format(adapt_steps))
         
-        train_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer, adapt_steps, mode='adapt')
+        trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, adapt_steps, mode='adapt')
         
         logger.console_logger.info(f"Finished task adaptation.")
 
@@ -378,7 +383,6 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
     '''
     For offline learning based on multitask datasets
     '''
-    assert mode in ['offline', 'adapt']
     t_env = 0
     episode = 0
     t_max = train_steps
@@ -410,7 +414,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             if episode_sample.device != main_args.device:
                 episode_sample.to(main_args.device)
             
-            learner.train(episode_sample, t_env, episode, task, mode)
+            learner.train(episode_sample, t_env, episode, task)
             # print(t_env)
             t_env += 1
             episode += batch_size_run
@@ -453,7 +457,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
         learner.save_models(save_path)
 
 
-def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=200000):
+def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2runner, task2online_buffer, train_steps=200000, mode='online'):
     '''
     For online transfer learning on multiple tasks
     the offline model is resumed to learn on multiple task at the same time.
@@ -489,7 +493,7 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
         for task in trans_tasks:
             args, runner, buffer = task2args[task], task2runner[task], task2online_buffer[task]
             with th.no_grad():
-                episode_batch = runner.run(test_mode=False) # exploration
+                episode_batch = runner.run(test_mode=False, exploration=True) # exploration
                 buffer.insert_episode_batch(episode_batch)
             
             if buffer.can_sample(args.batch_size):
@@ -502,11 +506,15 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
                         episode_sample.to(args.device)
                         
                     if diff_off_on:
-                        learner.train(episode_sample, t_env, episode, task, 'online')
+                        if mode == 'adapt':
+                            learner.adapt(episode_sample, t_env, episode, task)
+                        elif mode == 'online':
+                            # learner.train_online(episode_sample, t_env, episode, task)
+                            learner.train(episode_sample, t_env, episode, task, 'online')
                     else:
                         learner.train(episode_sample, t_env, episode, task, 'offline')
-                    t_env += 1
-                    episode += batch_size_run
+            t_env += runner.t
+            episode += batch_size_run
                     
         if (t_env - last_test_T) / main_args.test_interval >= 1 or t_env >= t_max:
             test_start_time = time.time()
@@ -537,7 +545,7 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
             last_log_T = t_env
             logger.log_stat("episode", episode, t_env)
             logger.print_recent_stats()
-                
+        
     # save the final model
     if main_args.save_model:
         save_path = os.path.join(main_args.save_dir, 'online', task, str(t_max))

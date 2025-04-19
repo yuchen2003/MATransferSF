@@ -11,7 +11,7 @@ runner: "mt_episode" # the same way to handle multi-task info in runners
 buffer_size: 5000
 
 # update the target network every {} episodes
-target_update_interval_or_tau: 0.005
+target_update_interval_or_tau: 0.05
 
 # learner />
 agent_output_type: "q" # regard psi as q's
@@ -19,43 +19,35 @@ learner: "tr_sf_learner"
 ## for pretrain
 r_lambda: 1
 w_range_reg: 0.0001
-w_range_gate: 30 # w_reg lower bound == 2
+w_range_gate: 30 # w_reg lower bound == 2， lbf:10, smacv1v2:20
 ## for RL
 double_q: True
-mixer: tr_dmaq_qatten
-# mixer: tr_qatten
-task_emb_std: 0.1
-cql_alpha: 1. # largely depend on the quality of dataset
-cql_type: "base"
+mixer: tr_qatten
 
-# qmix
+# hypernet
 mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
 
-#* offline train
-offline_train_steps: 30005 # LBF: 30005, smac: 20005
-
 # /> for LBF
-
+checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-16_15-46-18/models/offline/
+load_step: 30005
 # </ for LBF
 
-# /> for SMAC
-# checkpoint_path: results/transfer/sc2/sc2_test/tr_sf/seed_4_tr_sf_2025-04-14_15-47-25/models/pretrain/
-# load_step: 300005
-# </ for SMAC
+# /> for smac
+# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/sc2/sc2_test/3m-expert+4m-expert/tr_sf/seed_2_tr_sf_2025-03-30_10-20-46/models/offline
+# load_step: 50005
+# </ for smac
 
-# /> for SMACv2
-# checkpoint_path: /home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_4_tr_sf_2025-04-15_19-12-01/models/pretrain/
-# load_step: 200005
-# </ for SMACv2
+# /> for smacv2
+# </ for smacv2
 
-ckpt_stage: 1
-test_interval: 500
-log_interval: 500
-runner_log_interval: 500
-learner_log_interval: 500
-save_model_interval: 10000
+ckpt_stage: 3
+online_train_steps: 30005
+test_interval: 2000
+log_interval: 2000
+runner_log_interval: 2000
+learner_log_interval: 2000
 
 # </ learner
 
@@ -63,7 +55,6 @@ save_model_interval: 10000
 agent: "tr_sf_rnn"
 phi_dim: 64
 invdyn_cond_type: "cat"
-
 
 # mac
 mac: "tr_basic_mac"

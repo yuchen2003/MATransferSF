@@ -96,7 +96,7 @@ class OfflineBufferH5(): # One Task
             assert len(existing_folders) > 0
             return os.path.join(data_path, existing_folders[-1])
         else:
-            return data_path   
+            return data_path
 
     def _read_data(self, h5_path, max_data_size, shuffle):
         data = {}

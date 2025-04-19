@@ -38,3 +38,7 @@ log_interval: 10000
 runner_log_interval: 10000
 learner_log_interval: 10000
 t_max: 2050000
+
+# --- RL settings ---
+
+gamma: 0.995

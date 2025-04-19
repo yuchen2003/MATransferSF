@@ -15,7 +15,7 @@ results/
 src.*
 tmp*
 wandb/
-
+analysis/
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode
@@ -194,3 +194,4 @@ cython_debug/
 # Support for Project snippet scope
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
+scripts-rollback-0417.sh

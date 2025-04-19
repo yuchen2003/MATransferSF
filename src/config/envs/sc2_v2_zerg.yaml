@@ -84,3 +84,7 @@ offline_bottom_data_path: ""
 offline_max_buffer_size: 4000
 offline_data_shuffle: False
 offline_data_type: "h5"
+
+# --- RL settings ---
+
+gamma: 0.995

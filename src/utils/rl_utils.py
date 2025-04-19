@@ -96,3 +96,20 @@ class RunningMeanStd(object):
         self.mean = new_mean
         self.var = new_var
         self.count = new_count
+        
+class EMAMeanStd(object):
+    def __init__(self, alpha=0.9):
+        self.alpha = alpha
+        self.mean = None
+        self.var = None
+
+    def update(self, batch):
+        if self.mean is None or self.var is None:
+            self.mean = np.mean(batch, axis=0)
+            self.var = np.var(batch, axis=0)
+        else:
+            batch_mean = np.mean(batch, axis=0)
+            batch_var = np.var(batch, axis=0)
+
+            self.mean = self.alpha * self.mean + (1 - self.alpha) * batch_mean
+            self.var = self.alpha * self.var + (1 - self.alpha) * batch_var
