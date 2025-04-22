@@ -169,6 +169,8 @@ def run_sequential(args, logger):
         case "gymma":
             env_name, map_name = args.env_args['key'].split(':')
             args.env = env_name
+        case "grid_mpe":
+            env, map_name = args.env, args.env_args["map_name"]
         case _:
                 raise NotImplementedError("Do not support such envs: {}".format(args.env))
         

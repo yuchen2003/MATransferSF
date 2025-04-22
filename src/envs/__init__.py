@@ -4,6 +4,7 @@ from smac.env import MultiAgentEnv, StarCraft2Env
 from smacv2.env import StarCraft2Env as StarCraft2v2Env
 from smacv2.env.starcraft2.maps import get_map_params
 from smacv2.env.starcraft2.wrapper import StarCraftCapabilityEnvWrapper
+from .grid_mpe import GridMPEEnv
 import sys
 import os
 import gym
@@ -20,6 +21,7 @@ def env_fn(env, **kwargs) -> MultiAgentEnv:
 
 REGISTRY = {}
 REGISTRY["sc2"] = partial(env_fn, env=StarCraft2Env)
+REGISTRY["grid_mpe"] = partial(env_fn, env=GridMPEEnv)
 
 class SMACv2Wrapper(StarCraftCapabilityEnvWrapper):
     def __init__(self, **kwargs):

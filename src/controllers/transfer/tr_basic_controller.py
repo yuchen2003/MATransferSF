@@ -73,7 +73,7 @@ class TrBasicMAC:
                         self.surrogate_decomposer = self.task2decomposer[task]
                     task_args.obs_shape = self.task2decomposer[task].aligned_obs_dim
                     task_args.state_shape = self.task2decomposer[task].aligned_state_dim
-            case "gymma":
+            case "gymma" | "grid_mpe" :
                 for task in all_tasks:
                     task_args = self.task2args[task]
                     task_decomposer = decomposer_REGISTRY[env2decomposer[task_args.env]](task_args)
@@ -113,10 +113,7 @@ class TrBasicMAC:
         # NOTE online forward: train the same psi network for unseen task weights
         agent_inputs = self._build_inputs(ep_batch, t, task)
 
-        if self.main_args.use_residual_agent:
-            self.hidden_states, self.resi_h, psi = self.agent(agent_inputs, self.hidden_states, task, mixing_w, self.resi_h)
-        else:
-            self.hidden_states, psi = self.agent(agent_inputs, self.hidden_states, task, mixing_w)
+        self.hidden_states, psi = self.agent(agent_inputs, self.hidden_states, task, mixing_w)
         # psi: (bs, n, n_act, d_phi)
 
         # Softmax the agent outputs if they're policy logits
@@ -155,8 +152,6 @@ class TrBasicMAC:
     
     def init_hidden(self, batch_size, task):
         self.hidden_states = self.agent.init_hidden().expand(batch_size * self.task2n_agents[task], -1)
-        if self.main_args.use_residual_agent:
-            self.resi_h = self.agent.init_hidden().expand(batch_size * self.task2n_agents[task], -1)
 
     def parameters(self):
         return self.agent.parameters()

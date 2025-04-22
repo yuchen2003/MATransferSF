@@ -50,7 +50,7 @@ class MTBasicMAC:
                         self.surrogate_decomposer = self.task2decomposer[task]
                     task_args.obs_shape = self.task2decomposer[task].aligned_obs_dim
                     task_args.state_shape = self.task2decomposer[task].aligned_state_dim
-            case "gymma":
+            case "gymma" | "grid_mpe":
                 for task in all_tasks:
                     task_args = self.task2args[task]
                     task_decomposer = decomposer_REGISTRY[env2decomposer[task_args.env]](task_args)

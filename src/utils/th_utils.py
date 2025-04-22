@@ -1,4 +1,5 @@
 import torch
+import torch.optim as optim
 from torch import nn
 
 def clip_by_tensor(t,t_min,t_max):
@@ -31,3 +32,19 @@ def orthogonal_init_(m, gain=1):
     if isinstance(m, nn.Linear):
         init(m, nn.init.orthogonal_,
                     lambda x: nn.init.constant_(x, 0), gain=gain)
+        
+class ReciprocalScheduler(optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, milestones, lr_values, last_epoch=-1):
+        
+        self.milestones = milestones
+        self.lr_values = lr_values
+        super().__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        """
+        根据当前 epoch 返回学习率
+        """
+        for i, milestone in enumerate(self.milestones):
+            if self.last_epoch < milestone:
+                return [self.lr_values[i] for _ in self.base_lrs]
+        return [self.lr_values[-1] for _ in self.base_lrs]

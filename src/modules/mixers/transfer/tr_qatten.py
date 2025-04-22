@@ -1,7 +1,18 @@
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as ninit
+import numpy as np
+nninit = ninit.xavier_normal_
+USE_INIT = True
 
+def layer_init(layer):
+    if USE_INIT:
+        nninit(layer.weight, 0.1)
+        return layer
+    else:
+        return layer
+    
 class MTQMixer(nn.Module):
     def __init__(self, surrogate_decomposer, main_args):
         super(MTQMixer, self).__init__()
@@ -40,19 +51,19 @@ class MTQMixer(nn.Module):
             entity_mixing_input_dim += timestep_state_dim
         
         if getattr(main_args, "hypernet_layers", 1) == 1:
-            self.hyper_w_1 = nn.Linear(entity_mixing_input_dim, self.embed_dim)
-            self.hyper_w_final = nn.Linear(mixing_input_dim, self.embed_dim)
+            self.hyper_w_1 = layer_init(nn.Linear(entity_mixing_input_dim, self.embed_dim))
+            self.hyper_w_final = layer_init(nn.Linear(mixing_input_dim, self.embed_dim))
         elif getattr(main_args, "hypernet_layers", 1) == 2:
             hypernet_embed = self.main_args.hypernet_embed
             self.hyper_w_1 = nn.Sequential(
-                nn.Linear(entity_mixing_input_dim, hypernet_embed),
+                layer_init(nn.Linear(entity_mixing_input_dim, hypernet_embed)),
                 nn.LeakyReLU(),
-                nn.Linear(hypernet_embed, self.embed_dim),
+                layer_init(nn.Linear(hypernet_embed, self.embed_dim)),
             )
             self.hyper_w_final = nn.Sequential(
-                nn.Linear(mixing_input_dim, hypernet_embed),
+                layer_init(nn.Linear(mixing_input_dim, hypernet_embed)),
                 nn.LeakyReLU(),
-                nn.Linear(hypernet_embed, self.embed_dim),
+                layer_init(nn.Linear(hypernet_embed, self.embed_dim)),
             )
         elif getattr(main_args, "hypernet_layers", 1) > 2:
             raise Exception("Sorry >2 hypernet layers is not implemented!")

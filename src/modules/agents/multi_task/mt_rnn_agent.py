@@ -155,7 +155,7 @@ class MTRNNAgent(nn.Module):
                 wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack + 1
                 ## enemy_obs ought to add attack_action_infos
                 obs_en_dim += 1
-            case "gymma":
+            case "gymma" | "grid_mpe" :
                 obs_own_dim, obs_en_dim, obs_al_dim = surrogate_decomposer.own_obs_dim, surrogate_decomposer.obs_nf_en, surrogate_decomposer.obs_nf_al
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
                 wrapped_obs_own_dim = obs_own_dim + self.args.id_length + n_actions_no_attack + 1
@@ -179,7 +179,7 @@ class MTRNNAgent(nn.Module):
                 obs_en_dim = surrogate_decomposer.aligned_obs_nf_en      
                 obs_en_dim += 1
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-            case "gymma":
+            case "gymma" | "grid_mpe":
                 obs_en_dim = surrogate_decomposer.obs_nf_en + surrogate_decomposer.n_actions_attack
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
             case _:

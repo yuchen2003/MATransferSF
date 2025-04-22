@@ -17,13 +17,18 @@ target_update_interval_or_tau: 0.005
 agent_output_type: "q" # regard psi as q's
 learner: "tr_sf_learner"
 ## for pretrain
+lr: 0.003
+lr_decay_rate: 0.01
+lr_decay_step_size: 1000
+pretrain_steps: 300000
+pretrain_batch_size: 64
 r_lambda: 1
 w_range_reg: 0.0001
 w_range_gate: 30 # w_reg lower bound == 2， lbf:30, smacv1v2:30
-## for RL
+## for RL # TODO 精简化
 double_q: True
-mixer: tr_dmaq_qatten
-# mixer: tr_qatten
+# mixer: tr_dmaq_qatten
+mixer: tr_qatten
 task_emb_std: 0.1
 cql_alpha: 1. # largely depend on the quality of dataset
 cql_type: "base"
@@ -45,17 +50,12 @@ hypernet_embed: 64
 # load_step: 200005
 # </ for SMACv2
 
-lr_decay_rate: 0.0005 # lr will decay to lr/(1 + rate * max_steps) upon pretrain_steps
-pretrain_steps: 500005
-pretrain_batch_size: 64
-
 ckpt_stage: 0
-lr: 0.003
 test_interval: 1000
 log_interval: 1000
 runner_log_interval: 1000
 learner_log_interval: 1000
-save_model_interval: 200000
+save_model_interval: 100000
 
 # </ learner
 
@@ -68,7 +68,7 @@ invdyn_cond_type: "cat"
 mac: "tr_basic_mac"
 
 standardise_returns: False
-standardise_rewards: False # not use this for trsf
+standardise_rewards: True
 
 # params about observation decomposition
 id_length: 4

@@ -188,6 +188,11 @@ if __name__ == '__main__':
                 config_dict["env_args"]["time_limit"] = config_dict["time_limit"]
             if "pretrained_wrapper" in config_dict:
                 config_dict["env_args"]["pretrained_wrapper"] = config_dict["pretrained_wrapper"]
+        case "grid_mpe":
+            if "map_name" in config_dict:
+                config_dict["env_args"]["map_name"] = config_dict["map_name"]
+                config_dict["env_args"]["n_agents"] = int(config_dict["map_name"][-1])
+                config_dict["env_args"]["task_id"] = int(config_dict["map_name"][-1])
         case _:
             raise NotImplementedError("Not support env: {}".format(config_dict["env"]))
         
@@ -206,6 +211,8 @@ if __name__ == '__main__':
             env, map_name = config_dict["env"], config_dict["env_args"]["map_name"]
         case "gymma":
             env, map_name = config_dict["env_args"]["key"].split(':')
+        case "grid_mpe":
+            env, map_name = config_dict["env"], config_dict["env_args"]["map_name"]
         case _:
             raise NotImplementedError("Not support env: {}".format(config_dict["env"]))
     

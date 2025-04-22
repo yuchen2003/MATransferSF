@@ -47,7 +47,7 @@ hypernet_embed: 64
 # </ for smacv2
 
 ckpt_stage: 2
-online_train_steps: 2000005 # ~12000updates
+online_train_steps: 2000005 # ~40000updates
 test_interval: 10000
 log_interval: 10000
 runner_log_interval: 10000
@@ -60,14 +60,12 @@ save_model_interval: 500000
 agent: "tr_sf_rnn"
 phi_dim: 64
 invdyn_cond_type: "cat"
-use_residual_agent: True
-# use_residual_agent: False
 
 # mac
 mac: "tr_basic_mac"
 
 standardise_returns: False
-standardise_rewards: False
+standardise_rewards: True
 
 # params about observation decomposition
 id_length: 4

@@ -16,14 +16,11 @@ target_update_interval_or_tau: 0.005
 # learner />
 agent_output_type: "q" # regard psi as q's
 learner: "tr_sf_learner"
-## for pretrain
-r_lambda: 1
-w_range_reg: 0.0001
-w_range_gate: 30 # w_reg lower bound == 2
+
 ## for RL
 double_q: True
-mixer: tr_dmaq_qatten
-# mixer: tr_qatten
+# mixer: tr_dmaq_qatten
+mixer: tr_qatten
 task_emb_std: 0.1
 cql_alpha: 1. # largely depend on the quality of dataset
 cql_type: "base"
@@ -64,12 +61,11 @@ agent: "tr_sf_rnn"
 phi_dim: 64
 invdyn_cond_type: "cat"
 
-
 # mac
 mac: "tr_basic_mac"
 
 standardise_returns: False
-standardise_rewards: False # not use this for trsf
+standardise_rewards: True
 
 # params about observation decomposition
 id_length: 4

@@ -9,7 +9,7 @@ class MTVDNMixer(nn.Module):
         match main_args.env:
             case "sc2" | "sc2_v2":
                 state_dim = surrogate_decomposer.aligned_state_dim
-            case "gymma":
+            case "gymma" | "grid_mpe":
                 state_dim = surrogate_decomposer.obs_dim
         embed_dim = main_args.mixing_embed_dim
 

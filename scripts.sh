@@ -596,4 +596,28 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-co
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf off w_1 wcond psi" &
 wait
 
-#* w cond 加在GRU前容易爆炸；可能加在GRU后MLP前: # TODO 参考USFA17页重新实现
+#* w cond 加在GRU前容易爆炸；可能加在GRU后MLP前: # -TODO 参考USFA17页重新实现
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=4 --use_wandb=True --wandb_note="sc2v2 protoss pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss pre" &
+wait
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss pre decay 1e-3" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=4 --use_wandb=True --wandb_note="sc2v2 protoss pre decay 1e-3" &
+wait
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss off qplex" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_5_tr_sf_2025-04-19_23-43-35/models/pretrain/ --load_step=500005 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=4 --use_wandb=True --wandb_note="sc2v2 protoss off qplex" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_5_tr_sf_2025-04-19_23-43-35/models/pretrain/ --load_step=500005 &
+wait
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss off qattn" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_5_tr_sf_2025-04-19_23-43-35/models/pretrain/ --load_step=500005 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=4 --use_wandb=True --wandb_note="sc2v2 protoss off qattn" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_5_tr_sf_2025-04-19_23-43-35/models/pretrain/ --load_step=500005 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss pre std rew"
+#* 应该还好？rloss经过缩放不可比，aloss略低更稳定; 30w步未完全收敛
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss off std rew mixer init" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_5_tr_sf_2025-04-20_17-09-18/models/pretrain/ --load_step=300005
+sleep 6h
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=4 --use_wandb=True --wandb_note="sc2v2 protoss pre 50w steps std rew"
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss on std rew mixer init" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/sc2_v2/sc2_v2_test/tr_sf/seed_5_tr_sf_2025-04-20_23-12-32/models/offline/ --load_step=30005
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=4 --use_wandb=True --wandb_note="sc2v2 protoss pre exp decay global" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss pre exp decay global" &
+wait

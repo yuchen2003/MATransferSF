@@ -47,11 +47,6 @@ class TrSFRNNAgent(nn.Module):
         self.attn_enc = AttnFeatureExtractor(*task_spec_in, None)
         self.value = ValueModule(surrogate_decomposer, args, self.phi_dim)
         
-        self.use_residual_agent = args.use_residual_agent
-        if self.use_residual_agent:
-            self.resi_attn_enc = AttnFeatureExtractor(*task_spec_in, None)
-            self.resi_value = ValueModule(surrogate_decomposer, args, self.phi_dim)
-        
         for module in [self.task_explainer, self.phi_gen, self.attn_enc, self.value]:
             count_total_parameters(module)
         print("Agent: ")
@@ -79,7 +74,7 @@ class TrSFRNNAgent(nn.Module):
         
         return phi
     
-    def forward(self, inputs, hidden_state, task, mixing_w, resi_h=None): # psi forward
+    def forward(self, inputs, hidden_state, task, mixing_w): # psi forward
         n_agents = self.task2n_agents[task]
         bs = inputs.shape[0] // n_agents
         if len(mixing_w.shape) == 1: # [d,] | [bs, d] -> [n, d] | [bsn, d] == attn_feature.shape
@@ -93,17 +88,10 @@ class TrSFRNNAgent(nn.Module):
         if self.mode in ['online', 'adapt']:
             attn_feature = attn_feature.detach()
         h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state, mixing_w)
-
-        if self.use_residual_agent:
-            resi_attn_feature, resi_enemy_feats = self.resi_attn_enc.attn_forward(inputs, task)
-            resi_h, resi_psi = self.resi_value.forward(resi_attn_feature, resi_enemy_feats, resi_h, mixing_w)
-            psi_out = psi.detach() + resi_psi
-            psi_out = psi_out.view(bs, n_agents, -1, self.phi_dim)
-            return h, resi_h, psi_out
-        else:
-            # psi: (bsn, n_act, d_phi) -> (bs, n, n_act, d_phi)
-            psi = psi.view(bs, n_agents, -1, self.phi_dim)
-            return h, psi
+        
+        # psi: (bsn, n_act, d_phi) -> (bs, n, n_act, d_phi)
+        psi = psi.view(bs, n_agents, -1, self.phi_dim)
+        return h, psi
 
     def explain_task(self, task, state=None, state_mask=None, test_mode=True):
         if test_mode:
@@ -129,11 +117,6 @@ class TrSFRNNAgent(nn.Module):
         for k, v in self.task_explainer.task2w_ms.items():
             if v.var is not None:
                 print(f"read {k} std: {np.sqrt(np.mean(v.var))}")
-        
-        if self.use_residual_agent:
-            print("Cloning for residual agents")
-            self.resi_attn_enc.load_state_dict(self.attn_enc.state_dict())
-            self.resi_value.load_state_dict(self.value.state_dict())
         
         saved_task = set(self.task_explainer.task2w_ms.keys())
         all_task = set(self.all_task)
@@ -173,7 +156,7 @@ class PIObsDecomposer(nn.Module):
                 ## enemy_obs ought to add attack_action_infos
                 if not concat_obs_act and self.args.obs_last_action:
                     obs_en_dim += 1
-            case "gymma":
+            case "gymma" | "grid_mpe":
                 obs_own_dim, obs_en_dim, obs_al_dim = (
                     surrogate_decomposer.own_obs_dim,
                     surrogate_decomposer.obs_nf_en,
@@ -553,7 +536,7 @@ class ValueModule(nn.Module):
                 obs_en_dim = surrogate_decomposer.aligned_obs_nf_en
                 obs_en_dim += 1
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
-            case "gymma":
+            case "gymma" | "grid_mpe":
                 obs_en_dim = surrogate_decomposer.obs_nf_en + surrogate_decomposer.n_actions_attack
                 n_actions_no_attack = surrogate_decomposer.n_actions_no_attack
             case _:

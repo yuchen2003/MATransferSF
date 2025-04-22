@@ -6,8 +6,8 @@ from modules.mixers.qmix import QMixer
 from modules.mixers.transfer.tr_dmaq_qatten import MTDMAQQattnMixer
 import torch as th
 import torch.nn as nn
-from torch.optim import RMSprop, Adam, SGD
-from torch.optim.lr_scheduler import PolynomialLR
+from torch.optim import RMSprop, AdamW, SGD
+from torch.optim.lr_scheduler import StepLR
 from components.standarize_stream import RunningMeanStd
 import torch.nn.functional as F
 import numpy as np
@@ -28,9 +28,6 @@ class TransferSFLearner:
 
         self.params = list(mac.parameters())
         self.phi_dim = main_args.phi_dim
-        self.w_range_reg = main_args.w_range_reg
-        self.w_range_gate = main_args.w_range_gate
-        self.r_lambda = main_args.r_lambda
 
         self.mixer = MTDMAQQattnMixer(self.surrogate_decomposer, main_args)
         if main_args.mixer is not None:
@@ -58,13 +55,16 @@ class TransferSFLearner:
                     weight_decay=self.main_args.weight_decay,
                 )
             case "adam":
-                self.optimiser = Adam(params=self.params, lr=self.main_args.lr, weight_decay=self.main_args.weight_decay)
-                
+                # self.optimiser = Adam(params=self.params, lr=self.main_args.lr, weight_decay=self.main_args.weight_decay)
+                self.optimiser = AdamW(params=self.params, lr=self.main_args.lr)
             case _:
                 raise ValueError("Invalid optimiser type", self.main_args.optim_type)
         
         if main_args.train_mode == 'pretrain':
-            self.lr_decay_rate = main_args.lr_decay_rate
+            self.w_range_reg = main_args.w_range_reg
+            self.w_range_gate = main_args.w_range_gate
+            self.r_lambda = main_args.r_lambda
+            # self.lr_sched = StepLR(self.optimiser, main_args.lr_decay_step_size, main_args.lr_decay_rate)
         
         # a little wasteful to deepcopy (e.g. duplicates action selector), but should work for any MAC
         self.target_mac = copy.deepcopy(mac)
@@ -88,7 +88,7 @@ class TransferSFLearner:
             self.task2rew_ms = {}
             self.task2aw_rew_ms_list = {}
             for task in self.task2args.keys():
-                self.task2rew_ms[task] = RunningMeanStd(shape=(1, ), device=device)
+                self.task2rew_ms[task] = RunningMeanStd(shape=(1, ), device=device) # TODO load for on
                 
         # NOTE codes for analysis
         self.w_records = {}
@@ -130,9 +130,12 @@ class TransferSFLearner:
         self.total_training_steps += 1
         self.task2train_info[task]["training_steps"] += 1
         
-        # 1. linear decay
-        # if t_env >= 5000:
-        #     self.lr_sched.step()
+        if t_env % self.main_args.lr_decay_step_size == 0:
+            lr_targ = self.main_args.lr * (self.main_args.lr_decay_rate ** (t_env / self.main_args.t_max)) # exponential decay
+            # lr_targ = self.main_args.lr / (1 + self.lr_decay_rate * t_env) # reciprocal decay
+            for param_group in self.optimiser.param_groups:
+                param_group['lr'] = lr_targ
+            print(lr_targ)
         
         if t_env - self.task2train_info[task]["log_stats_t"] >= self.task2args[task].learner_log_interval:
             self.logger.log_stat(f"{task}/r_loss", r_loss.item(), t_env)
@@ -142,16 +145,12 @@ class TransferSFLearner:
             self.logger.log_stat(f"{task}/w_rec_std", np.mean(np.sqrt(w_var)), t_env)
             self.logger.log_stat(f"{task}/loss", loss.item(), t_env)
             self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
+            # TODO add phi statistics
             self.task2train_info[task]["log_stats_t"] = t_env
             if grad_norm.item() == 0:
                 print("ERROR... GRADS VANISH.")
                 exit(-1)
-            # print("learning rate: ", self.lr_sched.get_lr())
-                
-            # or 2. 1/T decay
-            for param_group in self.optimiser.param_groups:
-                param_group['lr'] = self.main_args.lr / (1 + self.lr_decay_rate * t_env)
-            print(self.main_args.lr / (1 + self.lr_decay_rate * t_env))
+
     
     def train(self, batch, t_env: int, episode_num: int, task: str, mode='offline'):
         ''' mode = | offline | '''
@@ -226,6 +225,10 @@ class TransferSFLearner:
             chosen_action_qvals = self.mixer(chosen_action_na_qvals, states[:, :-1], self.task2decomposer[task])
             target_max_qvals = self.target_mixer(target_max_na_qvals, states[:, 1:], self.task2decomposer[task])
             
+        # chosen_qs_global = ((1 / (mixing_w * self.phi_dim)).view(bs, 1, self.phi_dim) * chosen_action_qvals).sum(-1)
+        # q_mask = mask.squeeze(-1)
+        # print("q_esti_mean: ", (chosen_qs_global * q_mask).sum().item() / q_mask.sum().item())
+            
         loss = 0
         # Calculate 1-step Q-Learning targets
         
@@ -241,6 +244,11 @@ class TransferSFLearner:
             phi = rewards * mixing_w.unsqueeze(1)
             
         targets = phi + self.main_args.gamma * (1 - terminated) * target_max_qvals
+        
+        if self.main_args.standardise_returns:
+            self.task2ret_ms[task].update(targets)
+            targets = (targets - self.task2ret_ms[task].mean) / th.sqrt(self.task2ret_ms[task].var)
+        
         td_error = (chosen_action_qvals - targets.detach())
         
         # 0-out the targets that came from padded data
@@ -283,8 +291,8 @@ class TransferSFLearner:
             if mode in mode_cql:
                 self.logger.log_stat(f"{task}/cql_loss", cql_loss.item(), t_env)
             if mode == "online":
-                self.logger.log_stat(f"{task}/r_loss", r_loss.item(), t_env)
-                self.logger.log_stat(f"{task}/w_reg", w_range_reg.item(), t_env)
+                # self.logger.log_stat(f"{task}/r_loss", r_loss.item(), t_env)
+                # self.logger.log_stat(f"{task}/w_reg", w_range_reg.item(), t_env)
                 self.logger.log_stat(f"{task}/w_rec_std", np.mean(np.sqrt(w_var)), t_env)
             
             chosen_qs_global = ((1 / (mixing_w * self.phi_dim)).view(bs, 1, self.phi_dim) * chosen_action_qvals).sum(-1)

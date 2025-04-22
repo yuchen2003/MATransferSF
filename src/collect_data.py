@@ -101,6 +101,8 @@ def evaluate_sequential(args, runner, logger):
         case "gymma":
             env, map_name = args.env_args["key"].split(":")
             save_path = os.path.join('dataset', env, map_name, args.offline_data_quality, args.unique_token)
+        case "grid_mpe":
+            save_path = os.path.join(args.offline_data_folder, args.env, args.env_args['map_name'], args.offline_data_quality + "-replay", args.unique_token)
         case _:
             raise NotImplementedError("Not implemented for env {}".format(args.env))
 
@@ -215,6 +217,8 @@ def run_sequential(args, logger):
             case "gymma":
                 env_name, map_name = args.env_args['key'].split(':')
                 save_path = os.path.join(args.offline_data_folder, env_name, map_name, args.offline_data_quality + "-replay", args.unique_token)
+            case "grid_mpe":
+                save_path = os.path.join(args.offline_data_folder, args.env, args.env_args['map_name'], args.offline_data_quality + "-replay", args.unique_token)
             case _:
                 raise NotImplementedError("Do not support such envs: {}".format(args.env))
         

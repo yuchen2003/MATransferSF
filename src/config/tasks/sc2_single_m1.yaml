@@ -1,0 +1,21 @@
+# ----- test lbf transfer setting config -----
+
+# get env information
+env: "sc2"
+
+# get task information
+task: "sc2_single_marine1"
+# define train tasks and test tasks
+train_tasks: [
+  "3m"
+]
+train_tasks_data_quality: {
+  "3m": "expert",
+}
+
+tasks_offline_bottom_data_paths: {
+  "3m": "dataset/sc2/3m/expert/seed_1_qmix_2024-12-15_14-58-34",
+}
+
+trans_tasks: ["5m", "8m", "10m", "12m"]
+test_tasks: ["3m", "5m", "8m", "10m", "12m"]
