@@ -281,6 +281,18 @@ class SC2V2Decomposer:
                 self.unit_type2_order["zergling"] = 0
                 self.unit_type2_order["hydralisk"] = 1
                 self.unit_type2_order["baneling"] = 2
+            case [9, "protoss_gen"]: # sc2v2_large
+                self.unit_type2_order["stalker"] = 0
+                self.unit_type2_order["zealot"] = 1
+                self.unit_type2_order["colossus"] = 2
+            case [9, "terran_gen"]:  # sc2v2_large
+                self.unit_type2_order["marine"] = 3
+                self.unit_type2_order["marauder"] = 4
+                self.unit_type2_order["medivac"] = 5
+            case [9, "zerg_gen"]:    # sc2v2_large
+                self.unit_type2_order["zergling"] = 8
+                self.unit_type2_order["hydralisk"] = 7
+                self.unit_type2_order["baneling"] = 6
             case [5, "marines"]:
                 self.unit_type2_order["marine"] = 0
             case [5, "MMM"]:

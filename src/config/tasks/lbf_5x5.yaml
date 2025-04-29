@@ -1,0 +1,30 @@
+# ----- test lbf transfer setting config -----
+
+# get env information
+env: "gymma"
+
+# get task information
+task: "lbf_5x5"
+# define train tasks and test tasks
+train_tasks: [
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2",
+  "lbforaging:Foraging-5x5-2p-3f-coop-v2",
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2",
+]
+train_tasks_data_quality: {
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2": "expert",
+  "lbforaging:Foraging-5x5-2p-3f-coop-v2": "expert",
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2": "expert",
+}
+
+test_tasks: [ # for mto
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2",
+  "lbforaging:Foraging-5x5-2p-3f-coop-v2",
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2",
+  "lbforaging:Foraging-5x5-3p-3f-coop-v2",
+  "lbforaging:Foraging-5x5-4p-2f-coop-v2",
+]
+trans_tasks: [ # for transfer
+  "lbforaging:Foraging-5x5-3p-3f-coop-v2",
+  "lbforaging:Foraging-5x5-4p-2f-coop-v2",
+]

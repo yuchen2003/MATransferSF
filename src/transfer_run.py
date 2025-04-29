@@ -6,6 +6,7 @@ import pprint
 import time
 import threading
 import torch as th
+import yaml
 from types import SimpleNamespace as SN
 from utils.logging import Logger
 from utils.timehelper import time_left, time_str
@@ -14,6 +15,7 @@ import json
 from tqdm import tqdm
 import shutil
 import copy
+import collections
 from enum import Enum
 
 from learners import REGISTRY as le_REGISTRY
@@ -27,6 +29,22 @@ import numpy as np
 
 import cProfile, pstats, io
 DO_PROFILE = False
+
+def recursive_sn_update(d, u):
+    for k, v in u.items():
+        if isinstance(d, SN):
+            if isinstance(v, collections.abc.Mapping):
+                if not hasattr(d, k):
+                    setattr(d, k, type(d)())
+                recursive_sn_update(getattr(d, k), v)
+            else:
+                setattr(d, k, v)
+        else:
+            if isinstance(v, collections.abc.Mapping):
+                d[k] = recursive_sn_update(d.get(k, {}), v)
+            else:
+                d[k] = v
+    return d
 
 def run(_run, _config, _log):
 
@@ -134,10 +152,24 @@ def init_tasks(task_list, main_args, logger):
 
     for task in task_list:
         task_args = copy.deepcopy(main_args)
+        
+        if main_args.task in ["sc2_v2_large"]:
+            task_map = task.split('_')[1]
+            with open(os.path.join(os.path.dirname(__file__), "config", "envs", f"sc2_v2_{task_map}.yaml")) as f:
+                try:
+                    task_config = yaml.load(f)
+                except yaml.YAMLError as exc:
+                    assert False, f"{task_map}.yaml error: {exc}"
+                    
+            recursive_sn_update(task_args, task_config)
+        
         if main_args.env in ["sc2", "sc2_v2"]:
             task_args.env_args["map_name"] = task
         elif main_args.env == "gymma":
             task_args.env_args["key"] = task
+        elif main_args.env == "grid_mpe":
+            task_args.env_args["task_id"] = task[-1]
+        
         task2args[task] = task_args
 
         task_runner = r_REGISTRY[main_args.runner](args=task_args, logger=logger, task=task)
@@ -179,7 +211,8 @@ def run_sequential(args, logger):
     assert args.ckpt_stage in [0, 1, 2, 3]
     train_tasks = args.train_tasks
     trans_tasks = args.trans_tasks
-    all_tasks = list(set(train_tasks + trans_tasks))
+    test_tasks = args.test_tasks
+    all_tasks = list(set(train_tasks + trans_tasks + test_tasks))
     args.all_tasks = all_tasks
     args.n_tasks = len(all_tasks)
     # args.on_n_tasks = 1 # Assume online learning on only one task at a time
@@ -251,12 +284,11 @@ def run_sequential(args, logger):
         task2offline_buffer = {}
         for task in train_tasks:
             task2offline_buffer[task] = OfflineBuffer(
-                args=main_args,
+                main_args.env,
                 map_name=task,
                 quality=main_args.train_tasks_data_quality[task],
-                data_path=main_args.tasks_offline_bottom_data_paths[task],
-                max_buffer_size=main_args.offline_max_buffer_size,
-                shuffle=main_args.offline_data_shuffle,
+                offline_data_size=main_args.offline_max_buffer_size,
+                random_sample=main_args.offline_data_shuffle,
             )
             
     if args.ckpt_stage in [2, 3]:
@@ -400,7 +432,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
     
     test_start_time = time.time()
     with th.no_grad():
-        for task in main_args.all_tasks:
+        for task in main_args.test_tasks:
             task2runner[task].t_env = t_env
             for _ in range(n_test_runs):
                 task2runner[task].run(test_mode=True)
@@ -423,7 +455,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             test_start_time = time.time()
             
             with th.no_grad():
-                for task in main_args.all_tasks:
+                for task in main_args.test_tasks:
                     task2runner[task].t_env = t_env
                     for _ in range(n_test_runs):
                         task2runner[task].run(test_mode=True)
@@ -480,7 +512,7 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
     
     test_start_time = time.time()
     with th.no_grad():
-        for task in main_args.all_tasks:
+        for task in main_args.test_tasks:
             task2runner[task].t_env = t_env
             for _ in range(n_test_runs):
                 task2runner[task].run(test_mode=True)
@@ -520,7 +552,7 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
             test_start_time = time.time()
             
             with th.no_grad():
-                for task in main_args.all_tasks:
+                for task in main_args.test_tasks:
                     task2runner[task].t_env = t_env
                     for _ in range(n_test_runs):
                         task2runner[task].run(test_mode=True)

@@ -3,7 +3,7 @@ from .nq_learner import NQLearner
 from .coma_learner import COMALearner
 from .qtran_learner import QLearner as QTranLearner
 from .null_learner import NullLearner
-from .bc_learner import BCLearner
+from .multi_task.bc_learner import BCLearner
 from .maddpg_learner import MADDPGLearner
 from .matd3_learner import MATD3Learner
 from .icq_learner import ICQLearner
@@ -12,7 +12,7 @@ from .actor_critic_learner import ActorCriticLearner
 
 REGISTRY = {}
 
-REGISTRY["bc_learner"] = BCLearner
+REGISTRY["bcr_learner"] = BCLearner
 REGISTRY["q_learner"] = QLearner
 REGISTRY["nq_learner"] = NQLearner
 REGISTRY["coma_learner"] = COMALearner
@@ -38,3 +38,9 @@ from .transfer.tr_sf_learner import TransferSFLearner
 from .transfer.tr_q_learner import TransferQLearner
 REGISTRY["tr_sf_learner"] = TransferSFLearner
 REGISTRY["tr_q_learner"] = TransferQLearner
+
+from .multi_task.hissd_learner import HISSDLearner
+REGISTRY["hissd_learner"] = HISSDLearner
+
+from .multi_task.updet_learner import UPDeTLearner
+REGISTRY["updet_learner"] = UPDeTLearner

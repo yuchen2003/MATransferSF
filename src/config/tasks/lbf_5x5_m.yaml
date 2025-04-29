@@ -1,0 +1,35 @@
+# ----- test lbf transfer setting config -----
+
+# get env information
+env: "gymma"
+
+# get task information
+task: "lbf_5x5_m"
+# define train tasks and test tasks
+train_tasks: [
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2",
+  "lbforaging:Foraging-5x5-2p-3f-coop-v2",
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2",
+]
+train_tasks_data_quality: {
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2": "medium",
+  "lbforaging:Foraging-5x5-2p-3f-coop-v2": "medium",
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2": "medium",
+}
+# tasks_offline_bottom_data_paths: {
+#   "lbforaging:Foraging-5x5-2p-2f-coop-v2": "dataset/lbforaging/Foraging-5x5-2p-2f-coop-v2/expert/seed_1_qmix_2024-12-12_10-24-15",
+#   "lbforaging:Foraging-5x5-2p-3f-coop-v2": "dataset/lbforaging/Foraging-5x5-2p-3f-coop-v2/expert/seed_1_qmix_2025-02-20_14-52-28",
+#   "lbforaging:Foraging-5x5-3p-2f-coop-v2": "dataset/lbforaging/Foraging-5x5-3p-2f-coop-v2/expert/seed_1_qmix_2024-12-12_10-24-21",
+# }
+
+test_tasks: [ # for mto
+  "lbforaging:Foraging-5x5-2p-2f-coop-v2",
+  "lbforaging:Foraging-5x5-2p-3f-coop-v2",
+  "lbforaging:Foraging-5x5-3p-2f-coop-v2",
+  "lbforaging:Foraging-5x5-3p-3f-coop-v2",
+  "lbforaging:Foraging-5x5-4p-2f-coop-v2",
+]
+trans_tasks: [ # for transfer
+  "lbforaging:Foraging-5x5-3p-3f-coop-v2",
+  # "lbforaging:Foraging-5x5-4p-2f-coop-v2",
+]

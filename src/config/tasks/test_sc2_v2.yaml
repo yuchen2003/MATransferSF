@@ -1,0 +1,21 @@
+# ----- test lbf transfer setting config -----
+
+# get env information
+env: "sc2_v2"
+
+# get task information
+task: "test_sc2_v2"
+# define train tasks and test tasks
+train_tasks: [
+  "10gen_protoss_5_vs_5", 
+]
+train_tasks_data_quality: {
+  "10gen_protoss_5_vs_5": "expert",
+}
+
+trans_tasks: [
+  "10gen_protoss_5_vs_6", 
+]
+test_tasks: [
+  "10gen_protoss_5_vs_5",
+]

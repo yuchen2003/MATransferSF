@@ -31,7 +31,7 @@ hypernet_layers: 2
 hypernet_embed: 64
 
 #* offline train
-offline_train_steps: 30005 # LBF: 30005, smac: 20005
+offline_train_steps: 20000
 
 # /> for LBF
 

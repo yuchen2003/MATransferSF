@@ -128,10 +128,12 @@ def init_tasks(task_list, main_args, logger):
 
     for task in task_list: 
         task_args = copy.deepcopy(main_args)
-        if main_args.env == "sc2":
+        if main_args.env in ["sc2", "sc2_v2"]:
             task_args.env_args["map_name"] = task
         elif main_args.env == "gymma":
             task_args.env_args["key"] = task
+        elif main_args.env == "grid_mpe":
+            task_args.env_args["task_id"] = task[-1]
         task2args[task] = task_args
 
         task_runner = r_REGISTRY[main_args.runner](args=task_args, logger=logger, task=task)
@@ -168,7 +170,6 @@ def init_tasks(task_list, main_args, logger):
     return task2args, task2runner, task2buffer, task2scheme, task2groups, task2preprocess
 
 
-
 def run_sequential(args, logger):
     # In offline training, we use t_max to denote iterations
     # Init runner so we can get env info
@@ -184,13 +185,13 @@ def run_sequential(args, logger):
 
     for task in main_args.test_tasks: 
         task2runner[task].setup(scheme=task2scheme[task], groups=task2groups[task], preprocess=task2preprocess[task], mac=mac)
-    
+
     # define learner
     learner = le_REGISTRY[main_args.learner](mac, logger, main_args)
 
     if main_args.use_cuda:
         learner.cuda()
-    
+
     if main_args.checkpoint_path != "":
         timesteps = []
         timestep_to_load = 0
@@ -217,22 +218,23 @@ def run_sequential(args, logger):
 
         logger.console_logger.info("Loading model from {}".format(model_path))
         learner.load_models(model_path)
-        
+
         if main_args.evaluate or main_args.save_replay:
             evaluate_sequential(main_args, logger, task2runner)
             return
-    
+
     logger.console_logger.info("Beginning preparing offline datasets")
     # prepare offline data
     task2offline_buffer = {}
 
     for task in main_args.train_tasks:
-        task2offline_buffer[task] = OfflineBuffer(args=main_args, map_name=task,
-                                                   quality=main_args.train_tasks_data_quality[task],
-                                                   data_path=main_args.tasks_offline_bottom_data_paths[task],
-                                                   max_buffer_size=main_args.offline_max_buffer_size, 
-                                                   shuffle=main_args.offline_data_shuffle
-                                                   )
+        task2offline_buffer[task] = OfflineBuffer(
+            main_args.env,
+            map_name=task,
+            quality=main_args.train_tasks_data_quality[task],
+            offline_data_size=main_args.offline_max_buffer_size,
+            random_sample=main_args.offline_data_shuffle,
+        )
     logger.console_logger.info("Beginning multi-task offline training with {} timesteps for each task".format(main_args.t_max))
     train_sequential(main_args.train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer)
 
@@ -246,7 +248,6 @@ def run_sequential(args, logger):
     for task in all_tasks:
         task2runner[task].close_env()
     logger.console_logger.info(f"Finished Training")
-
 
 
 def train_sequential(train_tasks, main_args, logger, learner, task2args, task2runner, task2offline_buffer):
@@ -279,7 +280,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
 
             if episode_sample.device != main_args.device:
                 episode_sample.to(main_args.device)
-            
+            print(f"train at {t_env}")
             learner.train(episode_sample, t_env, episode, task)
             
             t_env += 1
@@ -314,8 +315,8 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
             last_log_T = t_env
             logger.log_stat("episode", episode, t_env)
             logger.print_recent_stats()
-        
-        
+
+
 def args_sanity_check(config, _log):
 
     # set CUDA flags

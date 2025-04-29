@@ -177,7 +177,7 @@ if __name__ == '__main__':
     
     # test match in python 3.10.x
     match config_dict["env"]:
-        case "sc2" | "sc2_v2":
+        case "sc2" | "sc2_v2" | "sc2_v2_large":
             # overwrite map_name config
             if "map_name" in config_dict:
                 config_dict["env_args"]["map_name"] = config_dict["map_name"]
@@ -207,7 +207,7 @@ if __name__ == '__main__':
     config_dict['unique_token'] = unique_token
 
     match config_dict["env"]:
-        case "sc2" | "sc2_v2":
+        case "sc2" | "sc2_v2" | "sc2_v2_large":
             env, map_name = config_dict["env"], config_dict["env_args"]["map_name"]
         case "gymma":
             env, map_name = config_dict["env_args"]["key"].split(':')

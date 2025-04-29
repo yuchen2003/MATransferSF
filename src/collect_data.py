@@ -102,11 +102,11 @@ def evaluate_sequential(args, runner, logger):
             env, map_name = args.env_args["key"].split(":")
             save_path = os.path.join('dataset', env, map_name, args.offline_data_quality, args.unique_token)
         case "grid_mpe":
-            save_path = os.path.join(args.offline_data_folder, args.env, args.env_args['map_name'], args.offline_data_quality + "-replay", args.unique_token)
+            save_path = os.path.join('dataset', args.env, args.env_args['map_name'], args.offline_data_quality, args.unique_token)
         case _:
             raise NotImplementedError("Not implemented for env {}".format(args.env))
 
-    offline_saver = DataSaver(save_path, logger, args.max_size)
+    offline_saver = DataSaver(save_path, args.max_size)
 
     logger.log_stat("episode", 0, runner.t_env)
     with th.no_grad():

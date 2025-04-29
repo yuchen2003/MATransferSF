@@ -14,7 +14,7 @@ class MTDMAQQattnMixer(nn.Module):
             case 'sc2' | 'sc2_v2':
                 state_nf_al, state_nf_en, timestep_state_dim = \
                     surrogate_decomposer.aligned_state_nf_al, surrogate_decomposer.aligned_state_nf_en, surrogate_decomposer.timestep_number_state_dim
-            case 'gymma':
+            case 'gymma' | 'grid_mpe':
                 state_nf_al, state_nf_en, timestep_state_dim = \
                     surrogate_decomposer.state_nf_al, surrogate_decomposer.state_nf_en, surrogate_decomposer.timestep_number_state_dim
         # timestep_state_dim = 0/1 denote whether encode the "t" of s

@@ -1,0 +1,25 @@
+env_args:
+  map_name: "ANY" # NOTE modified during task init
+
+test_greedy: True
+test_nepisode: 32
+
+# offline collection config
+num_episodes_collected: 2000
+offline_data_quality: "medium"
+offline_data_folder: "dataset"
+save_replay_buffer: True
+stop_winrate: 0.0
+stop_return: 0
+max_size: 2000
+t_max: 10050000
+
+# offline dataset, used only for single-task offline
+offline_bottom_data_path: ""
+offline_max_buffer_size: 2000
+offline_data_shuffle: False
+offline_data_type: "h5"
+
+# --- RL settings ---
+
+gamma: 0.995

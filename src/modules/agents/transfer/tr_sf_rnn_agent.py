@@ -80,14 +80,14 @@ class TrSFRNNAgent(nn.Module):
         if len(mixing_w.shape) == 1: # [d,] | [bs, d] -> [n, d] | [bsn, d] == attn_feature.shape
             mixing_w = mixing_w.unsqueeze(0).expand(n_agents, -1)
         elif len(mixing_w.shape) == 2:
-            mixing_w = mixing_w.unsqueeze(1).repeat(1, n_agents, 1).reshape(bs * n_agents, -1)
+            mixing_w = mixing_w.unsqueeze(1).expand(-1, n_agents, -1).reshape(bs * n_agents, -1)
         else:
             raise NotImplementedError
         
         attn_feature, enemy_feats = self.attn_enc.attn_forward(inputs, task)
-        if self.mode in ['online', 'adapt']:
-            attn_feature = attn_feature.detach()
-        h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state, mixing_w)
+        # if self.mode in ['online', 'adapt']:
+        #     attn_feature = attn_feature.detach()
+        h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state, mixing_w) # consume much mem !
         
         # psi: (bsn, n_act, d_phi) -> (bs, n, n_act, d_phi)
         psi = psi.view(bs, n_agents, -1, self.phi_dim)
@@ -109,9 +109,21 @@ class TrSFRNNAgent(nn.Module):
         th.save(self.task_explainer.task2w_ms, "{}/task_embed.th".format(path))
         
     def load(self, path):
-        # More fine-grained save and load can be implemented
-        missing, unexpected = self.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage), strict=False)
-        print(f"Missing: {missing}, Unexpected: {unexpected}.")
+        state_dict = th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage)
+        match self.mode:
+            case 'pretrain':
+                raise NotImplementedError('Currently not support continuing pre-training')
+            case 'offline':
+                phi_gen_name = 'phi_gen'
+                phi_gen_sd = {k[len(phi_gen_name) + 1 : ]: v for k, v in state_dict.items() if k.startswith(phi_gen_name)}
+                self.phi_gen.load_state_dict(phi_gen_sd)
+                task_head_name = 'task_explainer'
+                task_head_sd = {k[len(task_head_name) + 1 : ]: v for k, v in state_dict.items() if k.startswith(task_head_name)}
+                self.task_explainer.load_state_dict(task_head_sd)
+                self.phi_gen.task_explainer = self.task_explainer
+            case 'online' | 'adapt':
+                missing, unexpected = self.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
+                print(f"Missing: {missing}, Unexpected: {unexpected}.")
                 
         self.task_explainer.task2w_ms = th.load("{}/task_embed.th".format(path))
         for k, v in self.task_explainer.task2w_ms.items():
@@ -172,7 +184,10 @@ class PIObsDecomposer(nn.Module):
         wrapped_obs_own_dim = obs_own_dim + self.args.id_length
 
         if not concat_obs_act and self.args.obs_last_action:
-            wrapped_obs_own_dim += n_actions_no_attack + 1
+            if self.args.env not in ['grid_mpe']:
+                wrapped_obs_own_dim += n_actions_no_attack + 1
+            else:
+                wrapped_obs_own_dim += n_actions_no_attack
 
         assert self.attn_embed_dim % self.args.head == 0
         # obs self-attention modules
@@ -307,7 +322,7 @@ class TaskHead(nn.Module):
             case 'sc2' | "sc2_v2":
                 state_nf_al, state_nf_en, timestep_state_dim = \
                     surrogate_decomposer.aligned_state_nf_al, surrogate_decomposer.aligned_state_nf_en, surrogate_decomposer.timestep_number_state_dim
-            case 'gymma':
+            case 'gymma' | 'grid_mpe':
                 state_nf_al, state_nf_en, timestep_state_dim = \
                     surrogate_decomposer.state_nf_al, surrogate_decomposer.state_nf_en, surrogate_decomposer.timestep_number_state_dim
         # timestep_state_dim = 0/1 denote whether encode the "t" of s
@@ -404,12 +419,11 @@ class TaskHead(nn.Module):
         entity_query = self.temp_query(entity_embed).permute(0, 2, 1, 3).reshape(bs * n_entities, t, self.attn_embed_dim)
         entity_key = self.temp_key(entity_embed).permute(0, 2, 1, 3).reshape(bs * n_entities, t, self.attn_embed_dim)
         entity_value = entity_embed.permute(0, 2, 1, 3).reshape(bs * n_entities, t, self.entity_embed_dim)
-        entity_attn = self._attention(entity_query, entity_key, entity_value, self.attn_embed_dim, state_mask)
-        entity_attn = entity_attn * state_mask # NOTE 原则上是对的
-        entity_ln1 = self.traj_ln1(entity_attn + entity_value)
+        entity_attn = self._attention(entity_query, entity_key, entity_value, self.attn_embed_dim, state_mask) * state_mask # NOTE 原则上是对的 
+        entity_ln1 = self.traj_ln1(entity_attn + entity_value) # FIXME /> redundant cache
         entity_ln2 = self.traj_ln2(entity_ln1 + self.traj_feat_trfm(entity_ln1))
         entity_ln2 = entity_ln2.reshape(bs, n_entities, t, self.entity_embed_dim)
-        entity_out = entity_ln2.mean(dim=2)
+        entity_out = entity_ln2.mean(dim=2) # FIXME </
 
         # do entity-wise attention # TODO add multihead attn
         proj_query = self.query(entity_out)
@@ -544,10 +558,15 @@ class ValueModule(nn.Module):
         self.n_actions_no_attack = n_actions_no_attack
         self.id_action_no_attack = th.eye(self.n_actions_no_attack, dtype=th.float32, device=args.device)
         self.rnn = nn.GRUCell(self.entity_embed_dim * self.args.head, self.args.rnn_hidden_dim)
+        
+        if self.args.env == 'sc2_v2':
+            value_hidden_dim = 256
+        else:
+            value_hidden_dim = 128
 
         ## attack action networks
-        self.no_attack_psi = FCNet(self.hidden_dim + self.phi_dim + self.n_actions_no_attack, self.phi_dim, hidden_layer=3, use_leaky_relu=False)
-        self.attack_psi = FCNet(2 * self.args.rnn_hidden_dim + self.phi_dim, self.phi_dim, hidden_layer=3, use_leaky_relu=False)
+        self.no_attack_psi = FCNet(self.hidden_dim + self.phi_dim + self.n_actions_no_attack, self.phi_dim, hidden_dim=value_hidden_dim, use_leaky_relu=False)
+        self.attack_psi = FCNet(2 * self.args.rnn_hidden_dim + self.phi_dim, self.phi_dim, hidden_dim=value_hidden_dim, use_leaky_relu=False)
         self.enemy_embed = nn.Sequential(
             nn.Linear(obs_en_dim, self.args.rnn_hidden_dim),
             nn.ReLU(),
@@ -559,8 +578,8 @@ class ValueModule(nn.Module):
         h = self.rnn(attn_feature, h_in) # (bsn, hid)
         traj_policy_emb = th.cat([h, mixing_w], dim=-1) # (bsn, hid+d_phi)
         
-        psi_input = traj_policy_emb.unsqueeze(1).repeat(1, self.n_actions_no_attack, 1) # (bsn, n_no_attack, hid)
-        id_action_no_attack = self.id_action_no_attack.repeat(h.size(0), 1, 1)
+        psi_input = traj_policy_emb.unsqueeze(1).expand(-1, self.n_actions_no_attack, -1) # (bsn, n_no_attack, hid)
+        id_action_no_attack = self.id_action_no_attack.expand(h.size(0), -1, -1)
         psi_input = th.cat([psi_input, id_action_no_attack], dim=-1)
         wo_action_psi = self.no_attack_psi(psi_input) # (bsn, n_no_attack, d_phi)
         
@@ -569,7 +588,7 @@ class ValueModule(nn.Module):
             attack_action_input = th.cat(
                 [
                     enemy_feature,
-                    traj_policy_emb.unsqueeze(1).repeat(1, enemy_feats.size(1), 1),
+                    traj_policy_emb.unsqueeze(1).expand(-1, enemy_feats.size(1), -1),
                 ],
                 dim=-1,
             )  # (bsn, n_enemy, 2*hid)
@@ -583,7 +602,7 @@ class ValueModule(nn.Module):
 # ---------------------- Other network utilities ----------------------
 
 class FCNet(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_layer=2, hidden_dim=512, use_leaky_relu=True, use_last_activ=False):
+    def __init__(self, in_dim, out_dim, hidden_layer=3, hidden_dim=128, use_leaky_relu=False, use_last_activ=False):
         super().__init__()
             
         layers = [nn.Linear(in_dim, hidden_dim), nn.LeakyReLU() if use_leaky_relu else nn.ReLU()]

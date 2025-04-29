@@ -90,7 +90,7 @@ def evaluate_sequential(args, runner):
 
 def run_sequential(args, logger):
     # In offline training, we use t_max to denote iterations
-    
+
     # Init runner so we can get env info
     runner = r_REGISTRY[args.runner](args=args, logger=logger)
 
@@ -161,7 +161,7 @@ def run_sequential(args, logger):
         if args.evaluate or args.save_replay:
             evaluate_sequential(args, runner)
             return
-    
+
     # Create Offline Data
     match args.env:
         case "sc2" | "sc2_v2":
@@ -172,11 +172,15 @@ def run_sequential(args, logger):
         case "grid_mpe":
             env, map_name = args.env, args.env_args["map_name"]
         case _:
-                raise NotImplementedError("Do not support such envs: {}".format(args.env))
-        
-    offline_buffer = OfflineBuffer(args, map_name, args.offline_data_quality,
-                                   args.offline_bottom_data_path, args.offline_max_buffer_size, 
-                                   shuffle=args.offline_data_shuffle) # device defauly cpu
+            raise NotImplementedError("Do not support such envs: {}".format(args.env))
+
+    offline_buffer = OfflineBuffer(
+        args.env,
+        map_name,
+        args.offline_data_quality,
+        offline_data_size=args.offline_max_buffer_size,
+        random_sample=args.offline_data_shuffle,
+    )  # device defauly cpu
 
     logger.console_logger.info("Beginning  offline training with {} iterations".format(args.t_max))
     train_sequential(args, logger, learner, runner, offline_buffer)
@@ -186,7 +190,7 @@ def run_sequential(args, logger):
         os.makedirs(save_path, exist_ok=True)
         logger.console_logger.info("Save final model checkpoint in {}".format(save_path))
         learner.save_models(save_path)
-    
+
     runner.close_env()
     logger.console_logger.info("Finish Training")
 
@@ -253,8 +257,6 @@ def train_sequential(args, logger, learner, runner, offline_buffer):
             logger.print_recent_stats()
 
     logger.console_logger.info("Finsh training sequential")
-            
-
 
 
 def args_sanity_check(config, _log):

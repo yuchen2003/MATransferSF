@@ -25,6 +25,7 @@ class MPEDecomposer:
 
         # Actions
         self.n_actions_no_attack = 5
+        self.n_actions_attack = 0
         self.n_actions = self.n_actions_no_attack
 
 

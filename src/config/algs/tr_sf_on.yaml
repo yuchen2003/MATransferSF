@@ -2,8 +2,8 @@
 
 # use epsilon greedy action selector
 action_selector: "epsilon_greedy"
-epsilon_start: 1
-epsilon_finish: 0.05
+epsilon_start: 0.5
+epsilon_finish: 0.0
 epsilon_anneal_time: 50000
 
 runner: "mt_episode" # the same way to handle multi-task info in runners
@@ -27,6 +27,9 @@ w_std_lambda: 0.1
 mixer: tr_qatten
 cql_alpha: 0.1 # largely depend on the quality of dataset
 cql_type: "base"
+# use phi as reward model: ratio alpha_t = 1 - exp(-rew_beta * t / rew_step)
+rew_beta: 5
+rew_step: 500000
 
 # hypernet
 mixing_embed_dim: 32

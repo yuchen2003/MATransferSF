@@ -1,6 +1,6 @@
 import copy
 from components.episode_buffer import EpisodeBatch
-from modules.mixers.multi_task.mt_vdn import MTVDNMixer as VDNMixer
+from modules.mixers.multi_task.vdn import VDNMixer
 from modules.mixers.qmix import QMixer
 from modules.mixers.multi_task.qattn import QMixer as MTAttnQMixer
 import torch as th

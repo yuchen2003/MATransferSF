@@ -22,12 +22,13 @@ class ODISMAC:
         self.agent_output_type = main_args.agent_output_type
         self.action_selector = action_REGISTRY[main_args.action_selector](main_args)
         
-        if self.main_args.env not in ["sc2", "sc2_v2", "gymma"]:
+        if self.main_args.env not in ["sc2", "sc2_v2", "gymma", "grid_mpe"]:
             raise NotImplementedError
         env2decomposer = {
             "sc2": "sc2_decomposer",
             "sc2_v2": "sc2_v2_decomposer",
             "gymma": "gymma_decomposer",
+            "grid_mpe": "mpe_decomposer",
         }
         self.task2decomposer = {}
         self.surrogate_decomposer = None

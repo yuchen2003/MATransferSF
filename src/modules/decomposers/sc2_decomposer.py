@@ -48,8 +48,12 @@ def get_unit_type_from_map_type(map_type):
             return ["stalker", "zeolot"]
         case "MMM":
             return ["marine", "marauder", "medivac"]
+        case "hydralisks":
+            return ["hydralisks"]
+        case "bane":
+            return ["baneling", "zergling"]
         case _:
-            raise Exception("Do not support map_type:", map_type, "so far")
+            raise Exception("Do not support map_type:", map_type, "so far") # TODO hydralisk
 
     """elif map_type == "zeolots":
         return ["zeolot"]
@@ -206,8 +210,6 @@ class SC2Decomposer:
                 else:
                     raise Exception("Not support")
         
-
-
     def get_obs_size(self):
         nf_al = 4 + self.unit_type_bits
         nf_en = 4 + self.unit_type_bits

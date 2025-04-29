@@ -20,3 +20,13 @@ REGISTRY["mt_odis_mac"] = ODISMAC
 
 from .transfer.tr_basic_controller import TrBasicMAC
 REGISTRY['tr_basic_mac'] = TrBasicMAC
+
+from .multi_task.mt_hissd_controller import HISSDSMAC
+REGISTRY["mt_hissd_mac"] = HISSDSMAC
+
+from .multi_task.mt_updet_controller import UPDeTMAC
+from .multi_task.mt_bc_controller import BCMAC
+from .multi_task.mt_bcr_controller import BCRMAC
+REGISTRY["mt_updet_mac"] = UPDeTMAC
+REGISTRY["mt_bc_mac"] = BCMAC
+REGISTRY["mt_bcr_mac"] = BCRMAC

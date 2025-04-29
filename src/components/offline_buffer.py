@@ -1,22 +1,19 @@
+import re
 import os
-import h5py
-import copy
 import torch as th
 import numpy as np
-import torch.nn.functional as F
+import h5py
+from sys import stderr
 
-############## DataBatch ##############
-class OfflineDataBatch():
-    def __init__(self, data, batch_size, max_seq_length, device='cpu') -> None:
-        self.data = data
+class OfflineSample():
+    def __init__(self, data, batch_size, max_seq_length, device="cpu"):
         self.batch_size = batch_size
-        self.max_seq_length = max_seq_length # None if taken all length
+        self.max_seq_length = max_seq_length
+        self.data = data
         self.device = device
         for k, v in self.data.items():
-            # (batch_size, T, n_agents, *shape)
-            # truncate here, interface directly in offlinebuffer
             self.data[k] = v[:, :max_seq_length].to(self.device)
-    
+
     def __getitem__(self, item):
         if isinstance(item, str):
             if item in self.data:
@@ -24,192 +21,255 @@ class OfflineDataBatch():
             elif hasattr(self, item):
                 return getattr(self, item)
             else:
-                raise ValueError('Cannot index OfflineDataBatch with key "{}"'.format(item))
+                raise ValueError('Cannot index OfflineSample with key "{}"'.format(item))
         else:
-            raise ValueError('Cannot index OfflineDataBatch with key "{}"'.format(item))
+            raise ValueError('Cannot index OfflineSample with key "{}"'.format(item))
 
-    def to(self, device=None):
-        if device is None:
-            device = self.device
+    def to(self, device):
         for k, v in self.data.items():
             self.data[k] = v.to(device)
-        self.device = device # update self.device
-    
+        self.device = device
+
     def keys(self):
         return list(self.data.keys())
-    
-    def assign(self, key, value):
-        if key in self.data:
-            assert 0, "Cannot assign to existing key"
-        self.data[key] = value
 
 
-############## OfflineBuffer ##############
-class OfflineBufferH5(): # One Task
-    def __init__(self, args, map_name, quality,
-                 data_path='', # deepest folder
-                 max_buffer_size=2000,
-                 device='cpu',
-                 shuffle=True) -> None:
-        self.args = args
-        self.base_data_folder = args.offline_data_folder
-        self.map_name = map_name 
-        # map name is an abstract name, can be map_name in sc2/scenario_name in mpe
-        self.quality = quality
-        # set data_path
-        if not isinstance(data_path, list) and os.path.exists(data_path):
-            self.data_path_list = [data_path] 
+class OfflineBufferH5FullData():
+    def __init__(self, datapath, offline_data_size=2000, device="cpu", random_sample=True):
+        self.data = h5py.File(datapath, 'r')
+        self.keys = list(self.data.keys())
+        self.device = device
+        original_buffer_size = self.data[self.keys[0]].shape[0]
+
+        offline_data_size = original_buffer_size if offline_data_size > original_buffer_size or offline_data_size <= 0 else offline_data_size
+
+        if random_sample:
+            self.chosen_idx = np.random.choice(original_buffer_size, offline_data_size, replace=False)
         else:
-            self.data_path_list = []
-            for i, quality_i in enumerate(quality.split("_")): # e.g. "medium_expert"
-                data_path_i = data_path[i] if isinstance(data_path, list) else data_path
-                self.data_path_list.append(self.get_data_path(map_name, quality_i, data_path_i))
+            self.chosen_idx = np.array(range(original_buffer_size - offline_data_size, original_buffer_size))
+        
+        self.buffer_size = offline_data_size
+        self.batch_size = self.buffer_size
+        self.episodes_in_buffer = self.buffer_size
+        
+    def __del__(self):
+        self.data.close()
 
-        self.h5_paths = []
-        for final_data_path in self.data_path_list:
-            self.h5_paths.extend([os.path.join(final_data_path, f) for f in sorted(os.listdir(final_data_path)) if f.endswith(".h5")])
-        # print(self.h5_paths)
-        #self.h5_paths = [os.path.join(self.data_path, f) for f in os.listdir(self.data_path)]
+    def max_t_filled(self, filled):
+        return th.sum(filled, 1).max(0)[0]
 
-        self.max_buffer_size = 100000000 if max_buffer_size <= 0 else max_buffer_size
-        self.device = device # device does not work actually.
-        self.shuffle = shuffle
-        max_data_size_per_file = self.max_buffer_size//len(self.h5_paths)
-        dataset = [self._read_data(self.h5_paths[i], max_data_size_per_file, shuffle) for i in range(len(self.h5_paths))]
+    def can_sample(self, batch_size):
+        return self.episodes_in_buffer >= batch_size
+    
+    def sample(self, batch_size):
+        ep_ids = np.sort(np.random.choice(self.chosen_idx, batch_size, replace=False))
+        episode_data = {k: th.tensor(self.data[k][ep_ids]) for k in self.keys}
+        filled = episode_data['filled']
+        max_ep_t = self.max_t_filled(filled).item()
+        batch_sample = OfflineSample(episode_data, batch_size, max_ep_t, device=self.device)
+        return batch_sample
+
+
+class OfflineBufferH5():
+    def __init__(self, datapaths, offline_data_size=2000, device="cpu", random_sample=True):
+        offline_data_size = 100000000 if offline_data_size <= 0 else offline_data_size
+
+        dataset_sources = len(datapaths)
+        data_size_per_source = offline_data_size // dataset_sources
+        dataset = [ self._read_data(datapaths[i], data_size_per_source, random_sample) for i in range(dataset_sources) ] 
         self.data = {
             k: np.concatenate([v[k] for v in dataset], axis=0) for k in dataset[0].keys()
         }
+
         self.keys = list(self.data.keys())
         self.buffer_size = self.data[self.keys[0]].shape[0]
+        self.batch_size = self.buffer_size
+        self.episodes_in_buffer = self.buffer_size
 
-        if shuffle:
-            # shuffle again
-            shuffled_idx = np.random.choice(self.buffer_size, self.buffer_size, replace=False)
-            self.data = {k: v[shuffled_idx] for k, v in self.data.items()}
-        
-    
-    def get_data_path(self, map_name, quality, data_path):
-        data_path = os.path.join(self.base_data_folder, self.args.env, map_name, quality, data_path)
-        if all([".h5" not in f for f in os.listdir(data_path)]):
-            # automatically find a folder
-            existing_folders = [f for f in sorted(os.listdir(data_path)) if os.path.isdir(os.path.join(data_path, f))]
-            assert len(existing_folders) > 0
-            return os.path.join(data_path, existing_folders[-1])
-        else:
-            return data_path
+        self.device = device
 
-    def _read_data(self, h5_path, max_data_size, shuffle):
+    def _read_data(self, datapaths, offline_data_size, random_sample):
         data = {}
-        with h5py.File(h5_path, 'r') as f:
-            for k in f.keys():
-                added_data = f[k][:]
-                if k not in data:
-                    data[k] = added_data
-                else:
-                    data[k] = np.concatenate((data[k], added_data), axis=0)
-        if not shuffle and data[list(data.keys())[0]].shape[0] > max_data_size:
-            data = {k: v[-max_data_size:] for k, v in data.items()}
+        for path in (datapaths):
+            with h5py.File(path, 'r') as f:
+                for k in f.keys():
+                    if k not in data:
+                        data[k] = f[k][:]
+                    else:
+                        data[k] = np.concatenate((data[k], f[k][:]), axis=0)
+                    
+            # pre-slice for memory releasing
+            if not random_sample and data[list(data.keys())[0]].shape[0] > offline_data_size:
+                data = {k: v[-offline_data_size:] for k, v in data.items()}
 
         keys = list(data.keys())
-        original_data_size = data[keys[0]].shape[0]
-        data_size = min(original_data_size, max_data_size)
-
-        if shuffle:
-            shuffled_idx = np.random.choice(original_data_size, data_size, replace=False)
-            data = {k: v[shuffled_idx] for k, v in data.items()}
+        original_buffer_size = len(data[keys[0]])
+        offline_data_size = min(original_buffer_size, offline_data_size)
+        
+        if random_sample:
+            idx = np.random.choice(original_buffer_size, offline_data_size, replace=False)
+            data = {k: v[idx] for k, v in data.items()}
+        
         return data
 
-    @staticmethod
-    def max_t_filled(filled):
+    def max_t_filled(self, filled):
         return th.sum(filled, 1).max(0)[0]
-    
+
     def can_sample(self, batch_size):
-        return self.buffer_size >= batch_size
+        return self.episodes_in_buffer >= batch_size
+    
+    def sample(self, batch_size):
+        ep_ids = np.random.choice(self.episodes_in_buffer, batch_size, replace=False)
+        episode_data = {k: th.tensor(v[ep_ids]) for k, v in self.data.items()}
+        filled = episode_data['filled']
+        max_ep_t = self.max_t_filled(filled).item()
+        batch_sample = OfflineSample(episode_data, batch_size, max_ep_t, device=self.device)
+        return batch_sample
+
+
+class OfflineBufferPickle():
+    def __init__(self, datapaths, offline_data_size=2000, device="cpu", random_sample=True):
+        offline_data_size = 100000000 if offline_data_size <= 0 else offline_data_size
+
+        dataset_sources = len(datapaths)
+        data_size_per_source = offline_data_size // dataset_sources
+        self.data = []
+        for i in range(dataset_sources):
+            self.data.extend(self._read_data(datapaths[i], data_size_per_source, random_sample))
+
+        self.buffer_size = len(self.data)
+        self.batch_size = self.buffer_size
+        self.episodes_in_buffer = self.buffer_size
+        self.keys = list(self.data[0].keys())
+        self.device = device
+
+    def _read_data(self, datapaths, offline_data_size, random_sample):
+        data = []
+        for path in (datapaths):
+            data.extend(th.load(path))
+            if not random_sample:
+                if len(data) > offline_data_size:
+                    data = data[-offline_data_size:]
+        
+        original_buffer_size = len(data)
+        offline_data_size = min(original_buffer_size, offline_data_size)
+
+        if random_sample:
+            idx = np.random.choice(len(data), offline_data_size, replace=False)
+            data = [data[i] for i in idx]
+        return data
+
+    def max_t_filled(self, filled):
+        return th.sum(filled, 1).max(0)[0]
+
+    def can_sample(self, batch_size):
+        return self.episodes_in_buffer >= batch_size
 
     def sample(self, batch_size):
-        sampled_ep_idx = np.random.choice(self.buffer_size, batch_size, replace=False)
-        sampled_data = {k: th.tensor(v[sampled_ep_idx]) for k, v in self.data.items()}
-        """sampled_data = {}
-        for k, v in self.data.items():
-            dtype = self.scheme[k].get("dtype", th.float32) if self.scheme is not None and k in self.scheme else th.float32
-            sampled_data[k] = th.tensor(v[sampled_ep_idx], dtype=dtype)"""
-            
-        max_ep_t = self.max_t_filled(filled=sampled_data['filled']).item()
-        offline_data_batch = OfflineDataBatch(data=sampled_data, 
-                                              batch_size=batch_size, 
-                                              max_seq_length=max_ep_t, 
-                                              device=self.device)
-        return offline_data_batch
+        ep_ids = np.random.choice(self.episodes_in_buffer, batch_size, replace=False)
+        episode_data = [self.data[i] for i in ep_ids]
+        filled = th.cat([d['filled'].to(self.device) for d in episode_data], dim=0)
+        max_ep_t = self.max_t_filled(filled).item()
+
+        data = {
+            k: th.cat( [d[k] for d in episode_data], dim=0 ) for k in self.keys
+        }
+        batch_sample = OfflineSample(data, batch_size, max_ep_t, device=self.device)
+        return batch_sample
 
 
 class OfflineBuffer():
-    def __init__(self, args, map_name, quality,
-                data_path='', # deepest folder
-                max_buffer_size=2000,
-                device='cpu',
-                shuffle=True) -> None:
-
-        if args.offline_data_type=="h5":
-            self.buffer = OfflineBufferH5(args, map_name, quality,
-                                          data_path, max_buffer_size,
-                                          device, shuffle)
-            self.buffer_size = self.buffer.buffer_size
+    def __init__(self, env, map_name, quality, data_folder=None, dataset_folder='dataset', offline_data_size=2000, device="cpu", random_sample=True):
+        datapaths = []
+        if quality == 'medium-expert':
+            datapaths.append(self._load_data_sources(dataset_folder, env, map_name, 'medium', data_folder))
+            datapaths.append(self._load_data_sources(dataset_folder, env, map_name, 'expert', data_folder))
         else:
-            raise NotImplementedError("Do not support offline data type: {}".format(args.offline_data_type))
+            datapaths.append(self._load_data_sources(dataset_folder, env, map_name, quality, data_folder))
+        
+        if all([all(['pkl' in f for f in paths]) for paths in datapaths]):
+            self.buffer = OfflineBufferPickle(datapaths, offline_data_size=offline_data_size, device=device, random_sample=random_sample)
+        elif all([all(['h5' in f for f in paths]) for paths in datapaths]):
+            self.buffer = OfflineBufferH5(datapaths, offline_data_size=offline_data_size, device=device, random_sample=random_sample)
+        else:
+            raise ValueError("Cannot find parser for data files including {}".format(datapaths))
+
+        self.buffer_size = self.buffer.buffer_size
+        self.batch_size = self.buffer.buffer_size
+        self.episodes_in_buffer = self.buffer.buffer_size
+        self.device = device
     
+    def _load_data_sources(self, dataset_folder, env, map_name, quality, data_folder):
+        if env == 'gymma': # currently support lbf
+            env, map_name = map_name.split(':')
+        datapath = os.path.join(dataset_folder, env, map_name, quality)
+        assert os.path.exists(datapath), "Offline data path {} does not exist".format(datapath)
+
+        if data_folder is None or data_folder == '':
+            existing_folders = [ f for f in sorted(os.listdir(datapath)) if os.path.isdir(os.path.join(datapath, f)) ]
+            assert len(existing_folders) > 0
+            data_folder = existing_folders[-1]
+        
+        dataset_path = os.path.join(datapath, data_folder)
+        assert os.path.exists(dataset_path), 'Offline data path {} does not exist'.format(dataset_path)
+        self.dataset_path = dataset_path
+        print('Load dataset from {}'.format(dataset_path), file=stderr)
+
+        filenames = os.listdir(dataset_path)
+        if any(['part' in f for f in filenames]):
+            datafiles = [f for f in filenames if 'part' in f]
+            max_parts = max([ int(re.match(r'part_(\d+)\..*', file).group(1)) for file in datafiles if re.match(r'part_(\d+)\..*', file) is not None ])
+            ext_name = os.path.splitext(datafiles[0])[1]
+            datafiles = [ 'part_{}{}'.format(i, ext_name) for i in range(max_parts + 1) ]
+        else:
+            datafiles = filenames
+
+        datapaths = [os.path.join(dataset_path, f) for f in datafiles]
+        assert len(datapaths) > 0, 'dataset path {} contains no readable data files'.format(dataset_path)
+        return datapaths
+
+    def max_t_filled(self, filled):
+        return self.buffer.max_t_filled(filled)
+
     def can_sample(self, batch_size):
         return self.buffer.can_sample(batch_size)
 
     def sample(self, batch_size):
         return self.buffer.sample(batch_size)
 
-    def sequential_iter(self, batch_size):
-        return self.buffer.sequential_iter(batch_size)
-
-    def reset_sequential_iter(self):
-        self.buffer.reset_sequential_iter()
 
 class DataSaver():
-    def __init__(self, save_path, logger=None, max_size=2000) -> None:
-        self.save_path = save_path
+    def __init__(self, datadir, max_size=2000):
+        os.makedirs(datadir, exist_ok=True)
+        self.datadir = datadir
         self.max_size = max_size
-        #self.episode_batch = []
         self.data_batch = []
-        self.cur_size = 0
-        self.part_cnt = 0
-        self.logger = logger
-        os.makedirs(save_path, exist_ok=True)
-    
+        self.part_no = 0
+
     def append(self, data):
-        self.data_batch.append(data) # data \in OfflineDataBatch/EpisodeBatch
-        self.cur_size += data[list(data.keys())[0]].shape[0]
-        #if len(self.episode_batch) >= self.max_size:
-        if self.cur_size >= self.max_size:
+        self.data_batch.append(data)
+        if len(self.data_batch) >= self.max_size:
             self.save_batch()
-    
+            
     def save_batch(self):
-        #if len(self.data_batch) == 0:
-        if self.cur_size == 0:
-            return
-        keys = list(self.data_batch[0].keys())
-        data_dict = {k: [] for k in keys}
-        for data in self.data_batch:
-            for k in keys:
-                if isinstance(data[k], th.Tensor):
-                    data_dict[k].append(data[k].numpy())
-                else:
-                    data_dict[k].append(data[k])
-                    
-        # concatenate e.g. [(x, T, n_agents, *shape), ...] -> [max_size, T, n_agents, *shape]
-        data_dict = {k: np.concatenate(v) for k, v in data_dict.items()}
-        save_file = os.path.join(self.save_path, "part_{}.h5".format(self.part_cnt))
-        with h5py.File(save_file, 'w') as file:
-            for k, v in data_dict.items():
-                file.create_dataset(k, data=v, compression='gzip', compression_opts=9)
-        self.logger.console_logger.info("Save offline buffer to {} with {} episodes".format(save_file, self.cur_size))
-        self.data_batch.clear()
-        self.cur_size = 0
-        self.part_cnt += 1
-    
+        if len(self.data_batch) > 0:
+            keys = list(self.data_batch[0].keys())
+            datadic = {k: [] for k in keys}
+            for d in self.data_batch:
+                for k in keys:
+                    if isinstance(d[k], th.Tensor):
+                        datadic[k].append(d[k].numpy())
+                    else:
+                        datadic[k].append(d[k])
+            datadic = {k: np.concatenate(v) for k, v in datadic.items()}
+
+            with h5py.File(os.path.join(self.datadir, "part_{}.h5".format(self.part_no)), 'w') as file:
+                for k, v in datadic.items():
+                    file.create_dataset(k, data=v, compression='gzip', compression_opts=9)
+
+            self.data_batch.clear()
+            self.part_no += 1
+
     def close(self):
         self.save_batch()
+        return self.datadir

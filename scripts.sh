@@ -621,3 +621,158 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-con
 CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=4 --use_wandb=True --wandb_note="sc2v2 protoss pre exp decay global" &
 CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=sc2_v2_protoss --task-config=sc2_v2_test_protoss --seed=5 --use_wandb=True --wandb_note="sc2v2 protoss pre exp decay global" &
 wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_large --seed=1234 --use_wandb=True --wandb_note="lbf-large pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_large --seed=3407 --use_wandb=True --wandb_note="lbf-large pre" &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_large --seed=3407 --use_wandb=True --wandb_note="lbf-large pre 256hidden"
+#* 512->256 网络大小确实没有太大影响
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_large --seed=1234 --use_wandb=True --wandb_note="lbf-large off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_large/tr_sf/seed_3407_tr_sf_2025-04-22_16-09-14/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_large --seed=1235 --use_wandb=True --wandb_note="lbf-large off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_large/tr_sf/seed_3407_tr_sf_2025-04-22_16-09-14/models/pretrain/ --load_step=300000 &
+wait
+
+
+#! 正式实验
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_6x6 --seed=4 --use_wandb=True --wandb_note="lbf-6x6 pre" &
+wait
+#! 5x5 vs. 6x6 跨域显著影响a_loss,需要更有表达力的phi生成器,留给后续
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-22_21-15-28/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1234 --use_wandb=True --wandb_note="lbf-5x5 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-22_21-15-28/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_6x6 --seed=4 --use_wandb=True --wandb_note="lbf-6x6 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_4_tr_sf_2025-04-22_21-15-28/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_6x6 --seed=1234 --use_wandb=True --wandb_note="lbf-6x6 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_4_tr_sf_2025-04-22_21-15-28/models/pretrain --load_step=300000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 on" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_1234_tr_sf_2025-04-23_00-01-53/models/offline/ --load_step=30000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1234 --use_wandb=True --wandb_note="lbf-5x5 on" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_1234_tr_sf_2025-04-23_00-01-53/models/offline/ --load_step=30000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_6x6 --seed=4 --use_wandb=True --wandb_note="lbf-6x6 on" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_1234_tr_sf_2025-04-23_00-01-53/models/offline/ --load_step=30000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_6x6 --seed=1234 --use_wandb=True --wandb_note="lbf-6x6 on" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_1234_tr_sf_2025-04-23_00-01-53/models/offline/ --load_step=30000 &
+wait
+
+# 回到之前的5x5
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf-test pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_6x6 --seed=4 --use_wandb=True --wandb_note="lbf-6x6 pre" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-23_11-14-38/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=5 --use_wandb=True --wandb_note="lbf-5x5 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-23_11-14-38/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf-test off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-23_11-28-45/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf-test off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-23_11-28-45/models/pretrain --load_step=300000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 on" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=5 --use_wandb=True --wandb_note="lbf-5x5 on" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf-test on" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf-test on" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+wait
+
+sleep 5h
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 pre no std rew" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf-test pre no std rew" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_6x6 --seed=4 --use_wandb=True --wandb_note="lbf-6x6 pre no std rew" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 off no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-24_03-36-13/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf-test off no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-24_03-36-13/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_6x6 --seed=4 --use_wandb=True --wandb_note="lbf-6x6 off no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_4_tr_sf_2025-04-24_07-15-44/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=5 --use_wandb=True --wandb_note="lbf-5x5 off no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-24_03-36-13/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf-test off no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-24_03-36-13/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_6x6 --seed=5 --use_wandb=True --wandb_note="lbf-6x6 off no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_4_tr_sf_2025-04-24_07-15-44/models/pretrain/ --load_step=300000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 on no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-24_11-23-16/models/offline/ --load_step=15000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=4 --use_wandb=True --wandb_note="lbf-test on no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_4_tr_sf_2025-04-24_11-23-16/models/offline/ --load_step=15000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_6x6 --seed=4 --use_wandb=True --wandb_note="lbf-6x6 on no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-24_11-23-16/models/offline/ --load_step=15000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=5 --use_wandb=True --wandb_note="lbf-5x5 on no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-24_11-23-16/models/offline/ --load_step=15000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_test --seed=5 --use_wandb=True --wandb_note="lbf-test on no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_4_tr_sf_2025-04-24_11-23-16/models/offline/ --load_step=15000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_6x6 --seed=5 --use_wandb=True --wandb_note="lbf-6x6 on no std rew" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/tr_sf/seed_4_tr_sf_2025-04-24_11-23-16/models/offline/ --load_step=15000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 on explore" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=2 --use_wandb=True --wandb_note="lbf-5x5 on explore" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=3 --use_wandb=True --wandb_note="lbf-5x5 on explore" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+wait
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_6x6 --seed=1 --use_wandb=True --wandb_note="lbf-6x6 on explore" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_1234_tr_sf_2025-04-23_00-01-53/models/offline/ --load_step=30000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_6x6 --seed=2 --use_wandb=True --wandb_note="lbf-6x6 on explore" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_1234_tr_sf_2025-04-23_00-01-53/models/offline/ --load_step=30000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_6x6 --seed=3 --use_wandb=True --wandb_note="lbf-6x6 on explore" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_6x6/tr_sf/seed_1234_tr_sf_2025-04-23_00-01-53/models/offline/ --load_step=30000 &
+wait
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 on only 3p3f" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000
+
+sleep 5h
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=2 --use_wandb=True --wandb_note="lbf-5x5 on only 3p3f" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=3 --use_wandb=True --wandb_note="lbf-5x5 on only 3p3f" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=4 --use_wandb=True --wandb_note="lbf-5x5 on only 3p3f" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=5 --use_wandb=True --wandb_note="lbf-5x5 on only 3p3f" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=cn_offline --task-config=cn-expert --seed=4 --use_wandb=True --wandb_note="cn expert pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=cn_offline --task-config=cn-medium --seed=4 --use_wandb=True --wandb_note="cn medium pre" &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-expert --seed=1 --use_wandb=True --wandb_note="cn expert off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-expert/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-expert --seed=2 --use_wandb=True --wandb_note="cn expert off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-expert/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-expert --seed=3 --use_wandb=True --wandb_note="cn expert off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-expert/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-expert --seed=4 --use_wandb=True --wandb_note="cn expert off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-expert/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-expert --seed=5 --use_wandb=True --wandb_note="cn expert off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-expert/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain/ --load_step=300000 &
+wait
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-medium --seed=1 --use_wandb=True --wandb_note="cn medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-medium/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-medium --seed=2 --use_wandb=True --wandb_note="cn medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-medium/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-medium --seed=3 --use_wandb=True --wandb_note="cn medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-medium/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-medium --seed=4 --use_wandb=True --wandb_note="cn medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-medium/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=cn_offline --task-config=cn-medium --seed=5 --use_wandb=True --wandb_note="cn medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/grid_mpe/cn-medium/tr_sf/seed_4_tr_sf_2025-04-26_18-56-51/models/pretrain --load_step=300000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-23_11-14-38/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=2 --use_wandb=True --wandb_note="lbf-5x5 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-23_11-14-38/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5 --seed=3 --use_wandb=True --wandb_note="lbf-5x5 off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_4_tr_sf_2025-04-23_11-14-38/models/pretrain --load_step=300000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5_m --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium pre"
+sleep 5h
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5_mr --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium-replay pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5_r --seed=1 --use_wandb=True --wandb_note="lbf-5x5 expert-replay pre" &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_m --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_m/tr_sf/seed_1_tr_sf_2025-04-25_22-11-00/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_m --seed=2 --use_wandb=True --wandb_note="lbf-5x5 medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_m/tr_sf/seed_1_tr_sf_2025-04-25_22-11-00/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_m --seed=3 --use_wandb=True --wandb_note="lbf-5x5 medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_m/tr_sf/seed_1_tr_sf_2025-04-25_22-11-00/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_m --seed=4 --use_wandb=True --wandb_note="lbf-5x5 medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_m/tr_sf/seed_1_tr_sf_2025-04-25_22-11-00/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_m --seed=5 --use_wandb=True --wandb_note="lbf-5x5 medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_m/tr_sf/seed_1_tr_sf_2025-04-25_22-11-00/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_r --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_r/tr_sf/seed_1_tr_sf_2025-04-26_03-19-43/models/pretrain/ --load_step=300000 &
+wait
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_r --seed=2 --use_wandb=True --wandb_note="lbf-5x5 replay off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_r/tr_sf/seed_1_tr_sf_2025-04-26_03-19-43/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_r --seed=3 --use_wandb=True --wandb_note="lbf-5x5 replay off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_r/tr_sf/seed_1_tr_sf_2025-04-26_03-19-43/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_r --seed=4 --use_wandb=True --wandb_note="lbf-5x5 replay off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_r/tr_sf/seed_1_tr_sf_2025-04-26_03-19-43/models/pretrain/ --load_step=300000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_r --seed=5 --use_wandb=True --wandb_note="lbf-5x5 replay off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_r/tr_sf/seed_1_tr_sf_2025-04-26_03-19-43/models/pretrain/ --load_step=300000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 on only 3p3f anneal rw" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=2 --use_wandb=True --wandb_note="lbf-5x5 on only 3p3f anneal rw" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 on anneal rw" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=2 --use_wandb=True --wandb_note="lbf-5x5 on anneal rw" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 on anneal rw exp sched" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=2 --use_wandb=True --wandb_note="lbf-5x5 on anneal rw exp sched" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000 &
+wait
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 on anneal rw lstsq mat" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 on anneal rw lstsq scalar" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5_m --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium pre" &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5_mr --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium-replay pre" &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_pre --env-config=gymma_transfer --task-config=lbf_5x5_me --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium-replay pre" &
+wait
+
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_m --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_m/tr_sf/seed_1_tr_sf_2025-04-28_14-12-19/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_mr --seed=1 --use_wandb=True --wandb_note="lbf-5x5 medium-replay off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_mr/tr_sf/seed_1_tr_sf_2025-04-28_18-03-16/models/pretrain --load_step=300000 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_mto --env-config=gymma_transfer --task-config=lbf_5x5_mr --seed=2 --use_wandb=True --wandb_note="lbf-5x5 medium-replay off" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5_mr/tr_sf/seed_1_tr_sf_2025-04-28_18-03-16/models/pretrain --load_step=300000 &
+# -TODO 试一下 tune all
+CUDA_VISIBLE_DEVICES=1 python src/main.py --transfer --config=tr_sf_on --env-config=gymma_transfer --task-config=lbf_5x5 --seed=1 --use_wandb=True --wandb_note="lbf-5x5 on tune all" --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_5x5/tr_sf/seed_5_tr_sf_2025-04-23_13-35-24/models/offline --load_step=30000

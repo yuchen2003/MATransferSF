@@ -1,0 +1,22 @@
+# ----- marine battle setting config -----
+
+# get env information
+env: "sc2"
+# get task information
+task: "large_scale"
+# define train tasks and test tasks
+train_tasks: ["MMM", "9m_vs_10m"]
+train_tasks_data_quality: {
+    "MMM": "expert",
+    "9m_vs_10m": "expert",
+}
+
+tasks_offline_bottom_data_paths: {
+  "MMM": "dataset/sc2/MMM/expert/seed_1_qmix_2025-03-31_21-49-54",
+  "9m_vs_10m": "dataset/sc2/9m_vs_10m/expert/seed_3407_qmix_2025-04-20_19-45-19",
+}
+trans_tasks: []
+test_tasks: ["27m_vs_30m", "MMM2", "bane_vs_bane"] # evaluate only
+
+id_length: 5
+max_agent: 31

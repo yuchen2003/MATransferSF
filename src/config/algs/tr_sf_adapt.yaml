@@ -60,7 +60,7 @@ invdyn_cond_type: "cat"
 mac: "tr_basic_mac"
 
 standardise_returns: False
-standardise_rewards: False # not use this for trsf
+standardise_rewards: True
 
 # params about observation decomposition
 id_length: 4

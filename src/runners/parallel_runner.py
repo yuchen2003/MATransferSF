@@ -219,14 +219,20 @@ class ParallelRunner:
         return self.batch
 
     def _log(self, returns, stats, prefix):
+        log_dic = {}
         self.logger.log_stat(prefix + "return_mean", np.mean(returns), self.t_env)
         self.logger.log_stat(prefix + "return_std", np.std(returns), self.t_env)
+        log_dic[prefix + "return_mean"] = np.mean(returns)
+        log_dic[prefix + "return_std"] = np.std(returns)
         returns.clear()
 
         for k, v in stats.items():
             if k != "n_episodes":
                 self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
+                log_dic[prefix + k + "_mean"] = v/stats["n_episodes"]
         stats.clear()
+        
+        return log_dic
 
 
 def env_worker(remote, env_fn):

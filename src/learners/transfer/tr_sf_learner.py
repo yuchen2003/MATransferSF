@@ -82,7 +82,7 @@ class TransferSFLearner:
         if self.main_args.standardise_returns:
             self.task2ret_ms, self.task2psi_ms = {}, {}
             for task in self.task2args.keys():
-                self.task2ret_ms[task] = RunningMeanStd(shape=(self.task2n_agents[task], ), device=device)
+                self.task2ret_ms[task] = RunningMeanStd(shape=(self.phi_dim, ), device=device)
 
         if self.main_args.standardise_rewards:
             self.task2rew_ms = {}
@@ -238,10 +238,12 @@ class TransferSFLearner:
             phi_bar = (phi_tilde * mixing_n).sum(-1)
             phi = phi_bar
         elif mode == 'online':
-            # r_loss = ((phi_bar.detach() - rewards * mixing_w.unsqueeze(1)).square() * mask).mean()
-            # sgn = (mixing_w.detach() >= 0).float() * 2 - 1
-            # w_range_reg = (1 / (mixing_w + (1e-5) * sgn)).abs().mean() + mixing_w.abs().mean()
-            phi = rewards * mixing_w.unsqueeze(1)
+            phi_tilde = self.mac.phi_forward(obs, task).transpose(-1, -2) # [bs, T-1, d_phi, n]
+            mixing_n = mixing_n[:, :, :-1].transpose(-1, -2).unsqueeze(-2)
+            phi_bar = (phi_tilde * mixing_n).sum(-1)
+            phi_on = rewards * mixing_w.unsqueeze(1)
+            rew_alpha = 1 - np.exp(- self.main_args.rew_beta * t_env / self.main_args.rew_step)
+            phi = rew_alpha * phi_on + (1-rew_alpha) * phi_bar
             
         targets = phi + self.main_args.gamma * (1 - terminated) * target_max_qvals
         
@@ -358,16 +360,23 @@ class TransferSFLearner:
             self.target_mixer.cuda()
 
     def save_models(self, path):
-        # th.save(self.optimiser.state_dict(), "{}/opt.th".format(path))
+        # if self.main_args.train_mode in ['offline', 'online']:
+        #     th.save(self.optimiser.state_dict(), "{}/opt.th".format(path))
         self.mac.save_models(path)
+        if self.main_args.standardise_rewards:
+            th.save(self.task2rew_ms, f"{path}/rew_ms.th")
+            
         if self.mixer is not None:
             th.save(self.mixer.state_dict(), "{}/mixer.th".format(path))
             th.save(self.target_mixer.state_dict(), "{}/target_mixer.th".format(path))
         
     def load_models(self, path):
-        # self.optimiser.load_state_dict(th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage))
+        # if self.main_args.train_mode in ['online']:
+        #     self.optimiser.load_state_dict(th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage))
         self.mac.load_models(path)
         self.target_mac.load_models(path)
+        if self.main_args.standardise_rewards:
+            self.task2rew_ms = th.load(f"{path}/rew_ms.th")
         if self.main_args.train_mode in ['online', 'adapt']:
             if self.mixer is not None:
                 self.mixer.load_state_dict(th.load("{}/mixer.th".format(path), map_location=lambda storage, loc: storage))

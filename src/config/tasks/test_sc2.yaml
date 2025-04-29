@@ -1,0 +1,18 @@
+# ----- test lbf transfer setting config -----
+
+# get env information
+env: "sc2"
+
+# get task information
+task: "sc2_test"
+# define train tasks and test tasks
+train_tasks: [
+  "3m", "4m"
+]
+train_tasks_data_quality: {
+  "3m": "expert",
+  "4m": "expert",
+}
+
+trans_tasks: []
+test_tasks: ["3m", "4m"]

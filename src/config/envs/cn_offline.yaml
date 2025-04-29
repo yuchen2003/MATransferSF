@@ -26,3 +26,4 @@ offline_data_name: ""
 offline_data_quality: "expert"
 offline_data_size: 2000
 offline_data_shuffle: False
+offline_max_buffer_size: 4000

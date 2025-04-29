@@ -110,28 +110,30 @@ class StateEncoder(nn.Module):
         self.entity_embed_dim = args.entity_embed_dim
 
         # get detailed state shape information
-        state_nf_al, state_nf_en, timestep_state_dim = \
-            task2decomposer_.aligned_state_nf_al, task2decomposer_.aligned_state_nf_en, task2decomposer_.timestep_number_state_dim
+        match self.args.env:
+            case 'sc2' | "sc2_v2":
+                state_nf_al, state_nf_en, timestep_state_dim = \
+                    task2decomposer_.aligned_state_nf_al, task2decomposer_.aligned_state_nf_en, task2decomposer_.timestep_number_state_dim
+            case 'gymma' | 'grid_mpe':
+                state_nf_al, state_nf_en, timestep_state_dim = \
+                    task2decomposer_.state_nf_al, task2decomposer_.state_nf_en, task2decomposer_.timestep_number_state_dim
         self.state_last_action, self.state_timestep_number = task2decomposer_.state_last_action, task2decomposer_.state_timestep_number
-
+        
         self.n_actions_no_attack = task2decomposer_.n_actions_no_attack
 
         has_attack_action = task2decomposer_.n_actions_no_attack != task2decomposer_.n_actions
-        if has_attack_action:
-            ally_dim = state_nf_al + (self.n_actions_no_attack + 1)
-            enemy_dim = state_nf_en + 1
-        else:
-            ally_dim = state_nf_al + self.n_actions_no_attack
-            enemy_dim = state_nf_en
+        # if has_attack_action:
+        #     ally_dim = state_nf_al + (self.n_actions_no_attack + 1)
+        #     enemy_dim = state_nf_en + 1
+        # else:
+        #     ally_dim = state_nf_al + self.n_actions_no_attack + 1
+        #     enemy_dim = state_nf_en
         self.has_attack_action = has_attack_action
 
         # define state information processor
         if self.state_last_action:
-            if has_attack_action:
-                ally_dim += (self.n_actions_no_attack + 1)
-            else:
-                ally_dim += self.n_actions_no_attack
-
+            ally_dim = state_nf_al + 2 * (self.n_actions_no_attack + 1)
+            enemy_dim = state_nf_en + 1
         self.ally_encoder = nn.Linear(ally_dim, self.entity_embed_dim)
         self.enemy_encoder = nn.Linear(enemy_dim, self.entity_embed_dim)
 
@@ -152,9 +154,10 @@ class StateEncoder(nn.Module):
         ally_states, enemy_states, last_action_states, timestep_number_state = task_decomposer.decompose_state(states)
         ally_states = th.stack(ally_states, dim=0)  # [n_agents, bs, 1, state_nf_al]
 
-        _, current_attack_action_info, current_compact_action_states = task_decomposer.decompose_action_info(F.one_hot(actions.reshape(-1), num_classes=self.task2last_action_shape[task]))
-        current_compact_action_states = current_compact_action_states.reshape(bs, n_agents, -1).permute(1, 0, 2).unsqueeze(2)
-        ally_states = th.cat([ally_states, current_compact_action_states], dim=-1)
+        if self.state_last_action:
+            _, current_attack_action_info, current_compact_action_states = task_decomposer.decompose_action_info(F.one_hot(actions.reshape(-1), num_classes=self.task2last_action_shape[task]))
+            current_compact_action_states = current_compact_action_states.reshape(bs, n_agents, -1).permute(1, 0, 2).unsqueeze(2)
+            ally_states = th.cat([ally_states, current_compact_action_states], dim=-1)
 
         if self.has_attack_action:
             current_attack_action_info = current_attack_action_info.reshape(bs, n_agents, n_enemies).sum(dim=1)
@@ -205,22 +208,37 @@ class ObsEncoder(nn.Module):
 
         self.entity_embed_dim = args.entity_embed_dim
         self.attn_embed_dim = args.attn_embed_dim
-        obs_own_dim = decomposer.aligned_own_obs_dim
-        obs_en_dim, obs_al_dim = decomposer.aligned_obs_nf_en, decomposer.aligned_obs_nf_al
+        ## get obs shape information
+        match self.args.env:
+            case "sc2" | "sc2_v2":
+                obs_own_dim, obs_en_dim, obs_al_dim = (
+                    decomposer.aligned_own_obs_dim,
+                    decomposer.aligned_obs_nf_en,
+                    decomposer.aligned_obs_nf_al,
+                )
+                ## enemy_obs ought to add attack_action_infos
+                if  self.args.obs_last_action:
+                    obs_en_dim += 1
+            case "gymma" | "grid_mpe":
+                obs_own_dim, obs_en_dim, obs_al_dim = (
+                    decomposer.own_obs_dim,
+                    decomposer.obs_nf_en,
+                    decomposer.obs_nf_al,
+                )
+                ## enemy_obs ought to add attack_action_infos
+                if  self.args.obs_last_action:
+                    obs_en_dim += decomposer.n_actions_attack
+            case _:
+                raise NotImplementedError
+
         n_actions_no_attack = decomposer.n_actions_no_attack
+        wrapped_obs_own_dim = obs_own_dim + self.args.id_length
         
-        has_attack_action = n_actions_no_attack != decomposer.n_actions
-        if has_attack_action:
-            ## get wrapped obs_own_dim
-            if self.args.env == "sc2":
-                wrapped_obs_own_dim = obs_own_dim + args.id_length + n_actions_no_attack + 1
-                ## enemy_obs ought to add attack_action_info
-                obs_en_dim += 1
-            elif self.args.env == "gymma":
-                wrapped_obs_own_dim = obs_own_dim + args.id_length + n_actions_no_attack
-                obs_en_dim += decomposer.n_actions_attack
-        else:
-            wrapped_obs_own_dim = obs_own_dim + args.id_length + n_actions_no_attack
+        if self.args.obs_last_action:
+            if self.args.env not in ['grid_mpe']:
+                wrapped_obs_own_dim += n_actions_no_attack + 1
+            else:
+                wrapped_obs_own_dim += n_actions_no_attack
 
         self.ally_value = nn.Linear(obs_al_dim, self.entity_embed_dim)
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim)
@@ -317,22 +335,36 @@ class Decoder(nn.Module):
         self.attn_embed_dim = args.attn_embed_dim
         # self.task_repre_dim = args.task_repre_dim
         ## get obs shape information
-        obs_own_dim = decomposer.aligned_own_obs_dim
-        obs_en_dim, obs_al_dim = decomposer.aligned_obs_nf_en, decomposer.aligned_obs_nf_al
+        match self.args.env:
+            case "sc2" | "sc2_v2":
+                obs_own_dim, obs_en_dim, obs_al_dim = (
+                    decomposer.aligned_own_obs_dim,
+                    decomposer.aligned_obs_nf_en,
+                    decomposer.aligned_obs_nf_al,
+                )
+                ## enemy_obs ought to add attack_action_infos
+                if  self.args.obs_last_action:
+                    obs_en_dim += 1
+            case "gymma" | "grid_mpe":
+                obs_own_dim, obs_en_dim, obs_al_dim = (
+                    decomposer.own_obs_dim,
+                    decomposer.obs_nf_en,
+                    decomposer.obs_nf_al,
+                )
+                ## enemy_obs ought to add attack_action_infos
+                if  self.args.obs_last_action:
+                    obs_en_dim += decomposer.n_actions_attack
+            case _:
+                raise NotImplementedError
+
         n_actions_no_attack = decomposer.n_actions_no_attack
+        wrapped_obs_own_dim = obs_own_dim + self.args.id_length
         
-        has_attack_action = n_actions_no_attack != decomposer.n_actions
-        if has_attack_action:
-            ## get wrapped obs_own_dim
-            if self.args.env == "sc2":
-                wrapped_obs_own_dim = obs_own_dim + args.id_length + n_actions_no_attack + 1
-                ## enemy_obs ought to add attack_action_info
-                obs_en_dim += 1
-            elif self.args.env == "gymma":
-                wrapped_obs_own_dim = obs_own_dim + args.id_length + n_actions_no_attack
-                obs_en_dim += decomposer.n_actions_attack
-        else:
-            wrapped_obs_own_dim = obs_own_dim + args.id_length + n_actions_no_attack
+        if self.args.obs_last_action:
+            if self.args.env not in ['grid_mpe']:
+                wrapped_obs_own_dim += n_actions_no_attack + 1
+            else:
+                wrapped_obs_own_dim += n_actions_no_attack
 
         self.ally_value = nn.Linear(obs_al_dim, self.entity_embed_dim)
         self.enemy_value = nn.Linear(obs_en_dim, self.entity_embed_dim)

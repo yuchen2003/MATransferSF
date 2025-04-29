@@ -11,4 +11,31 @@ CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=s
 python src/main.py --collect --config=qmix --env-config=sc2_v2_zerg --map_name=10gen_zerg_10_vs_10 --offline_data_quality=expert --evaluate=True --save_replay_buffer=False --num_episodes_collected=4000 --seed=1 --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/collect/sc2_v2/10gen_zerg_10_vs_10/expert/stop_win_rate_0.9/qmix/seed_1_qmix_2025-03-31_21-53-57/models --load_step=6000105 --use_wandb=False &
 wait
  
- 
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1   --key=lbforaging:Foraging-6x6-2p-1f-coop-v2 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1   --key=lbforaging:Foraging-6x6-2p-2f-coop-v2 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1   --key=lbforaging:Foraging-6x6-2p-3f-coop-v2 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1   --key=lbforaging:Foraging-6x6-2p-4f-coop-v2 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1   --key=lbforaging:Foraging-5x5-2p-1f-coop-v2 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1   --key=lbforaging:Foraging-5x5-2p-2f-coop-v2 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1   --key=lbforaging:Foraging-5x5-2p-3f-coop-v2 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1 --key=lbforaging:Foraging-5x5-3p-2f-coop-v2 &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-2 --offline_data_quality=expert --stop_return=1 --save_replay_buffer=True --num_episodes_collected=2000 --seed=1 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-2 --offline_data_quality=medium --stop_return=0.5 --save_replay_buffer=True --num_episodes_collected=2000 --seed=1 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-4 --offline_data_quality=expert --stop_return=1 --save_replay_buffer=True --num_episodes_collected=2000 --seed=1 --use_wandb=True &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-4 --offline_data_quality=medium --stop_return=0.5 --save_replay_buffer=True --num_episodes_collected=2000 --seed=1 --use_wandb=True &
+wait
+
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-2 --offline_data_quality=expert --stop_return=1 --save_replay_buffer=False --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/collect/grid_mpe/cn-2/expert/stop_return_1/qmix/seed_1_qmix_2025-04-23_17-06-37/models/ --load_step=2050002 --num_episodes_collected=2000 --seed=1 --use_wandb=True --wandb_note='cn-2 expert collect' &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-2 --offline_data_quality=medium --stop_return=0.5 --save_replay_buffer=False --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/collect/grid_mpe/cn-2/medium/stop_return_0.5/qmix/seed_1_qmix_2025-04-23_17-06-37/models/ --load_step=882059 --num_episodes_collected=2000 --seed=1 --use_wandb=True --wandb_note='cn-2 medium collect' &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-4 --offline_data_quality=expert --stop_return=1 --save_replay_buffer=False --num_episodes_collected=2000 --seed=1 --use_wandb=True --wandb_note='cn-4 expert collect' &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-4 --offline_data_quality=medium --stop_return=0.5 --save_replay_buffer=False --num_episodes_collected=2000 --seed=1 --use_wandb=True --wandb_note='cn-4 medium collect' &
+wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=1 --key=lbforaging:Foraging-5x5-3p-2f-coop-v2 --t_max=10000000 &
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix_ft --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=2 --key=lbforaging:Foraging-5x5-3p-2f-coop-v2 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_ft --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=3 --key=lbforaging:Foraging-5x5-3p-2f-coop-v2 &
+CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_ft --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=4 --key=lbforaging:Foraging-5x5-3p-2f-coop-v2 &
+wait

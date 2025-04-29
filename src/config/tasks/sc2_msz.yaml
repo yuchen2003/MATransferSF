@@ -1,0 +1,17 @@
+# ----- marine battle setting config -----
+
+# get env information
+env: "sc2"
+# get task information
+task: "marines_stalkers_zealots"
+# define train tasks and test tasks
+train_tasks: ["5m_vs_6m", "10m", "3s5z", "2s1z_vs_3z"]
+train_tasks_data_quality: {
+    "5m_vs_6m": "expert",
+    "10m": "expert",
+    "3s5z": "expert",
+    "2s1z_vs_3z": "expert",
+}
+
+test_tasks: ["5m_vs_6m", "10m", "3s5z", "2s1z_vs_3z", "12m", "10m_vs_12m", "13m_vs_15m", "3s4z", "4s5z", "2s2z_vs_4z"]
+trans_tasks: []

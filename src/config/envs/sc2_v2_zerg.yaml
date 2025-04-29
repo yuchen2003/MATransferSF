@@ -1,5 +1,3 @@
-env: sc2_v2
-
 env_args:
   # change_fov_with_move: False  # if True, we split the full field-of-view into 4 90-degree sectors (instead of 12 30-degree sectors), each of which corresponds to `move north, south, east, west'.
   #  %%%%%%%%%%%%%%%%%%%%%% new config compared to v1 %%%%%%%%%%%%%%%%%%%%%%
@@ -36,7 +34,6 @@ env_args:
   kill_unit_step_mul: 2
   fully_observable: False
   #  %%%%%%%%%%%%%%%%%%%%%% new config compared to v1 %%%%%%%%%%%%%%%%%%%%%%
-
 
   continuing_episode: False
   difficulty: "7"
