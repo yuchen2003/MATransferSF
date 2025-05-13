@@ -12,11 +12,5 @@ train_tasks_data_quality: {
     "3s5z": "expert",
 }
 
-tasks_offline_bottom_data_paths: {
-    "2s3z": "dataset/sc2/2s3z/expert/seed_3407_qmix_2025-04-21_04-53-14",
-    "2s4z": "dataset/sc2/2s4z/expert/seed_3407_qmix_2025-04-21_11-02-20",
-    "3s5z": "dataset/sc2/3s5z/expert/seed_3407_qmix_2025-04-21_19-33-37",
-}
-
 test_tasks: ["2s3z", "2s4z", "3s5z", "1s3z", "1s4z", "1s5z", "2s5z", "3s3z", "3s4z", "4s3z", "4s4z", "4s5z", "4s6z"]
-trans_tasks: []
+trans_tasks: ["2s4z", "4s4z"]

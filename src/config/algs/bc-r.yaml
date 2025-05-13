@@ -36,3 +36,5 @@ attn_embed_dim: 8
 
 head: 1
 depth: 1
+
+t_max: 40000

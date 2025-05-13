@@ -5,14 +5,18 @@ from modules.mixers.multi_task.mt_qatten import MTQMixer
 from modules.mixers.qmix import QMixer
 import torch as th
 from torch.optim import RMSprop, Adam
-from components.standarize_stream import RunningMeanStd
 import torch.nn.functional as F
+from components.standarize_stream import RunningMeanStd
+from components.epsilon_schedules import DecayThenFlatSchedule
+from utils.calc import compute_q_values
+from utils.embed import pad_shape
 
 class TransferQLearner:
     def __init__(self, mac, logger, main_args) -> None:
         self.main_args = main_args
         self.mac = mac
         self.logger = logger
+        self.use_value_memory = getattr(main_args, "value_memory", False)
 
         self.task2args = mac.task2args
         self.task2n_agents = mac.task2n_agents
@@ -34,7 +38,7 @@ class TransferQLearner:
                     raise ValueError("Mixer {} not recognised.".format(main_args.mixer))
         self.params += list(self.mixer.parameters())
         self.target_mixer = copy.deepcopy(self.mixer)
-
+        
         match self.main_args.optim_type.lower():
             case "rmsprop":
                 self.optimiser = RMSprop(params=self.params, lr=self.main_args.lr, alpha=self.main_args.optim_alpha, eps=self.main_args.optim_eps, weight_decay=self.main_args.weight_decay)
@@ -45,6 +49,11 @@ class TransferQLearner:
         
         # a little wasteful to deepcopy (e.g. duplicates action selector), but should work for any MAC
         self.target_mac = copy.deepcopy(mac)
+        if main_args.ckpt_stage == 2 and self.use_value_memory:
+            self.off_mixer = copy.deepcopy(self.mixer)
+            self.off_mac = copy.deepcopy(mac)
+            self.vm_coef_scheduler = DecayThenFlatSchedule(main_args.vm_coef_start, main_args.vm_coef_finish, main_args.coef_anneal_time, decay="linear")
+            
         self.task2train_info = {}
         for task, task_args in self.task2args.items():
             self.task2train_info[task] = {
@@ -67,7 +76,8 @@ class TransferQLearner:
             for task in self.task2args.keys():
                 self.task2rew_ms[task] = RunningMeanStd(shape=(1, ), device=device)
     
-    def train(self, batch, t_env: int, episode_num: int, task: str):
+    def train(self, batch, t_env: int, episode_num: int, task: str, mode: str = 'offline'):
+        ''' mode = offline | online '''
         rewards = batch["reward"][:, :-1]
         actions = batch["actions"][:, :-1]
         terminated = batch["terminated"][:, :-1].float()
@@ -86,11 +96,20 @@ class TransferQLearner:
             agent_outs = self.mac.forward(batch, t=t, task=task)
             mac_out.append(agent_outs)
         mac_out = th.stack(mac_out, dim=1) #(bs, seq_len, n_agents, n_action)
-
         mac_out[avail_actions == 0] = -9999999
-
+        
         # Pick the Q-Values for the actions taken by each agent
         chosen_action_na_qvals = th.gather(mac_out[:, :-1], dim=3, index=actions).squeeze(3)  # Remove the last dim, (bs, seq_len, n_agents)
+        
+        if self.use_value_memory:
+            off_mac_out = []
+            self.off_mac.init_hidden(batch.batch_size, task)
+            for t in range(batch.max_seq_length):
+                off_agent_outs = self.off_mac.forward(batch, t=t, task=task)
+                off_mac_out.append(off_agent_outs)
+            off_mac_out = th.stack(off_mac_out, dim=1)
+            off_mac_out[avail_actions == 0] = -9999999
+            off_chosen_action_na_qvals = th.gather(off_mac_out[:, :-1], dim=3, index=actions).squeeze(3)
 
         # Calculate the Q-Values necessary for the target
         target_mac_out = []
@@ -119,7 +138,8 @@ class TransferQLearner:
         if self.mixer is not None:
             chosen_action_qvals = self.mixer(chosen_action_na_qvals, batch["state"][:, :-1], self.task2decomposer[task])
             target_max_qvals = self.target_mixer(target_max_na_qvals, batch["state"][:, 1:], self.task2decomposer[task])
-            cons_max_q_vals = self.mixer(cons_max_qvals, batch["state"], self.task2decomposer[task])
+            if self.use_value_memory:
+                off_chosen_action_qvals = self.off_mixer(off_chosen_action_na_qvals, batch["state"][:, :-1], self.task2decomposer[task])
         
 
         # Calculate 1-step Q-Learning targets
@@ -130,7 +150,14 @@ class TransferQLearner:
             targets = (targets - self.task2ret_ms[task].mean) / th.sqrt(self.task2ret_ms[task].var)
         
         # Td-error
-        td_error = (chosen_action_qvals - targets.detach())
+        if self.use_value_memory:
+            vm_coef = self.vm_coef_scheduler.eval(t_env)
+            qvals_ovm = th.maximum(off_chosen_action_qvals, targets)
+            td_error = \
+                (1 - vm_coef) * (chosen_action_qvals - targets.detach()) ** 2 + \
+                vm_coef * (chosen_action_qvals - qvals_ovm.detach()) ** 2
+        else:
+            td_error = (chosen_action_qvals - targets.detach()) ** 2
 
         mask = mask.expand_as(td_error)
 
@@ -138,10 +165,9 @@ class TransferQLearner:
         masked_td_error = td_error * mask
 
         # Normal L2 loss, take mean over actual data
-        td_loss = (masked_td_error ** 2).sum() / mask.sum()
+        td_loss = (masked_td_error).sum() / mask.sum()
         
         loss = td_loss
-
 
         if "cql" in self.main_args.name:
             match self.main_args.cql_type:
@@ -151,10 +177,14 @@ class TransferQLearner:
                     cql_error = th.logsumexp(mac_out[:, :-1], dim=3) - chosen_action_na_qvals
                     cql_mask = mask.expand_as(cql_error)
                     cql_loss = (cql_error * cql_mask).sum() / mask.sum() # better use mask.sum() instead of cql_mask.sum()
-                case "odis":
-                    assert cons_max_q_vals[:, :-1].shape == chosen_action_qvals.shape
-                    cql_error = cons_max_q_vals[:, :-1] - chosen_action_qvals
-                    cql_loss = (cql_error * mask).sum() / mask.sum()
+                case "calql":
+                    returns = compute_q_values(rewards, self.main_args.gamma)
+                    qs = mac_out[:, :-1] # (bs, T, n, n_act)
+                    max_qs = th.maximum(qs, pad_shape(returns, qs, pos=2))
+                    q_data = chosen_action_na_qvals
+                    cql_error = th.logsumexp(max_qs, dim=-1) - q_data
+                    cql_mask = mask.unsqueeze(-1).expand_as(cql_error)
+                    cql_loss = (cql_error * cql_mask).sum() / mask.sum() # better use mask.sum()
                 case _:
                     raise ValueError("Unknown cql_type: {}".format(self.main_args.cql_type))
             loss += self.main_args.cql_alpha * cql_loss
@@ -217,6 +247,9 @@ class TransferQLearner:
         self.mac.load_models(path)
         # Not quite right but I don't want to save target networks
         self.target_mac.load_models(path)
+        if self.main_args.ckpt_stage == 2:
+            self.off_mixer.load_state_dict(th.load("{}/mixer.th".format(path), map_location=lambda storage, loc: storage))
+            self.off_mac.load_model(path)
         if self.mixer is not None:
             self.mixer.load_state_dict(th.load("{}/mixer.th".format(path), map_location=lambda storage, loc: storage))
         self.optimiser.load_state_dict(th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage))

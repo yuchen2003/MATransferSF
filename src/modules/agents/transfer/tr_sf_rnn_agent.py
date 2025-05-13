@@ -85,8 +85,8 @@ class TrSFRNNAgent(nn.Module):
             raise NotImplementedError
         
         attn_feature, enemy_feats = self.attn_enc.attn_forward(inputs, task)
-        # if self.mode in ['online', 'adapt']:
-        #     attn_feature = attn_feature.detach()
+        if self.mode in ['online', 'adapt'] and self.args.tune_all:
+            attn_feature = attn_feature.detach()
         h, psi = self.value.forward(attn_feature, enemy_feats, hidden_state, mixing_w) # consume much mem !
         
         # psi: (bsn, n_act, d_phi) -> (bs, n, n_act, d_phi)

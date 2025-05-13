@@ -22,3 +22,5 @@ pretrain_tasks_data_quality: {
     "cn-2": "expert",
     "cn-4": "expert",
 }
+
+trans_tasks: ["cn-3", "cn-5"]

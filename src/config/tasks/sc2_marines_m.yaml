@@ -12,11 +12,6 @@ train_tasks_data_quality: {
     "9m_vs_10m": "medium",
 }
 
-tasks_offline_bottom_data_paths: {
-  "3m": "dataset/sc2/3m/medium/seed_3407_qmix_2025-04-22_10-04-36",
-  "5m_vs_6m": "dataset/sc2/5m_vs_6m/medium/seed_3407_qmix_2025-04-20_10-21-52",
-  "9m_vs_10m": "dataset/sc2/9m_vs_10m/medium/seed_3407_qmix_2025-04-20_19-45-19",
-}
 test_tasks: ["3m", "5m_vs_6m", "9m_vs_10m", "4m", "5m", "10m", "12m", "7m_vs_8m", "8m_vs_9m", "10m_vs_11m", "10m_vs_12m", "13m_vs_15m"] # evaluate only
 
-trans_tasks: []
+trans_tasks: ["5m_vs_6m", "10m_vs_11m"]

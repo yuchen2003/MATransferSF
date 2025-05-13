@@ -238,7 +238,8 @@ def run_sequential(args, logger):
         case _:
             raise ValueError
     main_args.train_mode = train_mode
-    mac = mac_REGISTRY[main_args.mac](all_tasks, train_tasks, trans_tasks, train_mode, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
+    
+    mac = mac_REGISTRY[main_args.mac](all_tasks, train_mode, task2scheme=task2buffer_scheme, task2args=task2args, main_args=main_args)
 
     learner = le_REGISTRY[main_args.learner](mac, logger, main_args)
     if main_args.use_cuda:
@@ -381,15 +382,6 @@ def pretrain_sequential(train_tasks, main_args, logger, learner, task2args, task
             episode += batch_size
             
         if (t_env - last_test_T) / main_args.test_interval >= 1 or t_env >= t_max:
-            # test_start_time = time.time()
-            
-            # for task in main_args.train_tasks:
-            #     episode_sample = task2offline_buffer[task].sample(batch_size)
-            #     if episode_sample.device != main_args.device:
-            #         episode_sample.to(main_args.device)
-            
-            # test_time_total += time.time() - test_start_time
-            
             logger.console_logger.info("Step: {} / {}".format(t_env, t_max))
             logger.console_logger.info("Estimated time left: {}. Time passed: {}. Test time cost: {}".format(
                 time_left(last_time, last_test_T, t_env, t_max), time_str(time.time() - start_time), time_str(test_time_total)
@@ -447,7 +439,7 @@ def train_sequential(train_tasks, main_args, logger, learner, task2args, task2ru
                 episode_sample.to(main_args.device)
             
             learner.train(episode_sample, t_env, episode, task)
-            # print(t_env)
+
             t_env += 1
             episode += batch_size_run
 
@@ -504,7 +496,7 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
     last_time = start_time
     test_time_total = 0
     diff_off_on = False
-    if main_args.name in ['tr_sf']:
+    if main_args.name in ['tr_sf', "tr_qmix_cql"]:
         diff_off_on = True
 
     batch_size_run = main_args.batch_size_run # num of parellel envs
@@ -525,7 +517,10 @@ def trans_sequential(trans_tasks, main_args, logger, learner, task2args, task2ru
         for task in trans_tasks:
             args, runner, buffer = task2args[task], task2runner[task], task2online_buffer[task]
             with th.no_grad():
-                episode_batch = runner.run(test_mode=False, exploration=True) # exploration
+                if main_args.name == 'tr_sf':
+                    episode_batch = runner.run(test_mode=False, exploration=True) # exploration
+                else:
+                    episode_batch = runner.run(test_mode=False) # exploration
                 buffer.insert_episode_batch(episode_batch)
             
             if buffer.can_sample(args.batch_size):

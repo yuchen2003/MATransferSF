@@ -8,16 +8,16 @@ task: "sc2_v2_large"
 # define train tasks and test tasks
 train_tasks: [
   "10gen_protoss_5_vs_5", 
-  "10gen_terran_5_vs_5", 
-  "10gen_zerg_5_vs_5", 
+  # "10gen_terran_5_vs_5", 
+  # "10gen_zerg_5_vs_5", 
   # "10gen_protoss_10_vs_11", 
   # "10gen_terran_20_vs_23", 
   # "10gen_zerg_20_vs_20",
 ]
 train_tasks_data_quality: {
   "10gen_protoss_5_vs_5": "expert",
-  "10gen_terran_5_vs_5": "expert", 
-  "10gen_zerg_5_vs_5": "expert",
+  # "10gen_terran_5_vs_5": "expert", 
+  # "10gen_zerg_5_vs_5": "expert",
   # "10gen_protoss_10_vs_11": "expert", 
   # "10gen_terran_20_vs_23": "expert", 
   # "10gen_zerg_20_vs_20": "expert",
@@ -28,9 +28,10 @@ trans_tasks: [
   # "10gen_protoss_20_vs_23", "10gen_terran_20_vs_23", "10gen_zerg_20_vs_23"
 ]
 test_tasks: [
-  "10gen_protoss_5_vs_5", 
-  "10gen_terran_5_vs_5", 
-  "10gen_zerg_20_vs_23", 
+  "10gen_protoss_20_vs_20",
+  # "10gen_protoss_5_vs_5", 
+  # "10gen_terran_5_vs_5", 
+  # "10gen_zerg_20_vs_23", 
   # "10gen_protoss_5_vs_6", "10gen_protoss_10_vs_10", "10gen_protoss_20_vs_23", 
   # "10gen_zerg_5_vs_6", "10gen_zerg_10_vs_10", "10gen_zerg_20_vs_23", 
   # "10gen_terran_6_vs_6", "10gen_terran_10_vs_10", "10gen_terran_20_vs_23", 

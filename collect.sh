@@ -39,3 +39,5 @@ CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix_ft --env-confi
 CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_ft --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=3 --key=lbforaging:Foraging-5x5-3p-2f-coop-v2 &
 CUDA_VISIBLE_DEVICES=1 python src/main.py --collect --config=qmix_ft --env-config=gymma_collect --offline_data_quality=medium --save_replay=True --num_episodes_collected=2000 --stop_return=0.5 --seed=4 --key=lbforaging:Foraging-5x5-3p-2f-coop-v2 &
 wait
+
+CUDA_VISIBLE_DEVICES=0 python src/main.py --collect --config=qmix --env-config=cn_collect --map_name=cn-4 --offline_data_quality=expert --stop_return=0.71 --save_replay_buffer=False --num_episodes_collected=2000 --seed=1 --use_wandb=True --wandb_note='cn-4 expert collect' --checkpoint_path=/home/amax/xyc/MATr/offpymarl/results/collect/grid_mpe/cn-4/medium/stop_return_0.5/qmix/seed_1_qmix_2025-04-25_21-57-11/models/ --load_step=1623806

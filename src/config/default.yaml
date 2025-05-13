@@ -30,7 +30,7 @@ save_replay: False # Saving the replay of the model loaded from checkpoint_path
 local_results_path: "results" # Path for local results
 use_wandb: True
 wandb_team: "yc-lab"
-wandb_project: "MA-Off2On-res"
+wandb_project: "MA-Cont"
 wandb_mode: "online"
 wandb_note: null
 

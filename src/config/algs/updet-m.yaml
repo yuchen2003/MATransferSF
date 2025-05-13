@@ -47,3 +47,5 @@ type_conservative: "norm"
 
 head: 1
 depth: 1
+
+t_max: 40000

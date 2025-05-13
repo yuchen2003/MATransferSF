@@ -2,9 +2,9 @@
 
 # use epsilon greedy action selector
 action_selector: "epsilon_greedy"
-epsilon_start: 0.5
+epsilon_start: 0.0
 epsilon_finish: 0.0
-epsilon_anneal_time: 50000
+epsilon_anneal_time: 1
 
 runner: "mt_episode" # the same way to handle multi-task info in runners
 
@@ -66,9 +66,6 @@ invdyn_cond_type: "cat"
 
 # mac
 mac: "tr_basic_mac"
-
-standardise_returns: False
-standardise_rewards: True
 
 # params about observation decomposition
 id_length: 4

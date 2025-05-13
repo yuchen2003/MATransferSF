@@ -134,6 +134,9 @@ class StateEncoder(nn.Module):
         if self.state_last_action:
             ally_dim = state_nf_al + 2 * (self.n_actions_no_attack + 1)
             enemy_dim = state_nf_en + 1
+        else:
+            ally_dim = state_nf_al
+            enemy_dim = state_nf_en
         self.ally_encoder = nn.Linear(ally_dim, self.entity_embed_dim)
         self.enemy_encoder = nn.Linear(enemy_dim, self.entity_embed_dim)
 

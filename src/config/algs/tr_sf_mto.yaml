@@ -64,9 +64,6 @@ invdyn_cond_type: "cat"
 # mac
 mac: "tr_basic_mac"
 
-standardise_returns: False
-standardise_rewards: True
-
 # params about observation decomposition
 id_length: 4
 max_agent: 15

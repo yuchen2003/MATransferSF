@@ -28,6 +28,7 @@ class TransferSFLearner:
 
         self.params = list(mac.parameters())
         self.phi_dim = main_args.phi_dim
+        self.reward_scale = getattr(main_args, "reward_scale", 1.) # currenly only for sc2v2: 10
 
         self.mixer = MTDMAQQattnMixer(self.surrogate_decomposer, main_args)
         if main_args.mixer is not None:
@@ -110,6 +111,7 @@ class TransferSFLearner:
         # self.w_records[task].append(mixing_w)
         # print(t_env)
         
+        rewards = rewards / self.reward_scale
         if self.main_args.standardise_rewards:
             self.task2rew_ms[task].update(rewards)
             rewards = (rewards - self.task2rew_ms[task].mean) / th.sqrt(self.task2rew_ms[task].var)
@@ -145,7 +147,6 @@ class TransferSFLearner:
             self.logger.log_stat(f"{task}/w_rec_std", np.mean(np.sqrt(w_var)), t_env)
             self.logger.log_stat(f"{task}/loss", loss.item(), t_env)
             self.logger.log_stat(f"{task}/grad_norm", grad_norm, t_env)
-            # TODO add phi statistics
             self.task2train_info[task]["log_stats_t"] = t_env
             if grad_norm.item() == 0:
                 print("ERROR... GRADS VANISH.")
@@ -153,7 +154,7 @@ class TransferSFLearner:
 
     
     def train(self, batch, t_env: int, episode_num: int, task: str, mode='offline'):
-        ''' mode = | offline | '''
+        ''' mode = | offline | online '''
         bs = batch.batch_size
         n_agents = self.task2args[task].n_agents
         rewards = batch["reward"][:, :-1] # (bs, T-1, 1)
@@ -166,6 +167,7 @@ class TransferSFLearner:
         mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
         avail_actions = batch["avail_actions"]
 
+        rewards = rewards / self.reward_scale
         if self.main_args.standardise_rewards:
             self.task2rew_ms[task].update(rewards)
             rewards = (rewards - self.task2rew_ms[task].mean) / th.sqrt(self.task2rew_ms[task].var)
@@ -363,8 +365,8 @@ class TransferSFLearner:
         # if self.main_args.train_mode in ['offline', 'online']:
         #     th.save(self.optimiser.state_dict(), "{}/opt.th".format(path))
         self.mac.save_models(path)
-        if self.main_args.standardise_rewards:
-            th.save(self.task2rew_ms, f"{path}/rew_ms.th")
+        # if self.main_args.standardise_rewards:
+        #     th.save(self.task2rew_ms, f"{path}/rew_ms.th")
             
         if self.mixer is not None:
             th.save(self.mixer.state_dict(), "{}/mixer.th".format(path))
@@ -375,8 +377,11 @@ class TransferSFLearner:
         #     self.optimiser.load_state_dict(th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage))
         self.mac.load_models(path)
         self.target_mac.load_models(path)
-        if self.main_args.standardise_rewards:
-            self.task2rew_ms = th.load(f"{path}/rew_ms.th")
+        # if self.main_args.standardise_rewards:
+        #     self.task2rew_ms = th.load(f"{path}/rew_ms.th")
+        #     for task in self.task2args.keys():
+        #         if task not in self.task2rew_ms.keys():
+        #             self.task2rew_ms[task] = RunningMeanStd(shape=(1, ), device=self.main_args.device)
         if self.main_args.train_mode in ['online', 'adapt']:
             if self.mixer is not None:
                 self.mixer.load_state_dict(th.load("{}/mixer.th".format(path), map_location=lambda storage, loc: storage))

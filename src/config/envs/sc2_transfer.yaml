@@ -50,4 +50,6 @@ offline_data_type: "h5"
 
 # --- RL settings ---
 
-gamma: 0.995
+tune_all: False
+standardise_returns: False
+standardise_rewards: True

@@ -75,7 +75,6 @@ save_replay_buffer: True
 stop_winrate: 0.0
 stop_return: 0
 max_size: 2000
-t_max: 10050000
 
 # offline dataset, used only for single-task offline
 offline_bottom_data_path: ""
@@ -85,4 +84,10 @@ offline_data_type: "h5"
 
 # --- RL settings ---
 
-gamma: 0.995
+gamma: 0.99
+rnn_hidden_dim: 128
+tune_all: False
+standardise_returns: False
+standardise_rewards: False
+reward_scale: 10
+target_update_interval_or_tau: 200

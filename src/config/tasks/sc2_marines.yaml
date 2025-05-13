@@ -19,4 +19,4 @@ tasks_offline_bottom_data_paths: {
 }
 test_tasks: ["3m", "5m_vs_6m", "9m_vs_10m", "4m", "5m", "10m", "12m", "7m_vs_8m", "8m_vs_9m", "10m_vs_11m", "10m_vs_12m", "13m_vs_15m"] # evaluate only
 
-trans_tasks: []
+trans_tasks: ["5m_vs_6m", "10m_vs_11m"]

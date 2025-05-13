@@ -11,13 +11,13 @@ runner: "mt_episode"
 buffer_size: 5000
 
 # update the target network every {} episodes
-target_update_interval_or_tau: 0.01
+target_update_interval_or_tau: 0.005
 
 # use the Q_Learner to train
 agent_output_type: "q"
 learner: "mt_q_learner"
 double_q: True
-mixer: "mt_qattn"
+mixer: "mt_qattn" # NOTE QMIX: mt_qattn; QPLEX: mt_dmaq_qattn
 mixing_embed_dim: 32
 hypernet_layers: 2
 hypernet_embed: 64
@@ -39,14 +39,11 @@ attn_embed_dim: 8
 head: 1
 
 cql_alpha: 1. # largely depend on the quality of dataset
-cql_type: "base"
+cql_type: "base" # NOTE base: CQL | calql: CalQL
+# cql_type: "calql"
 
+name: "tr_qmix"
 
-name: "tr_qmix_cql"
+offline_train_steps: 50000
 
-offline_train_steps: 205
-online_train_steps: 205 # for online train
-
-# 0: not trained, save pretraining model and not load or load from pretraining model; 
-ckpt_stage: 0
-# checkpoint_path: "/home/amax/xyc/MATr/offpymarl/results/transfer/lbforaging/lbf_test/lbforaging:Foraging-5x5-2p-2f-coop-v2-expert+lbforaging:Foraging-5x5-3p-2f-coop-v2-expert/tr_sf/seed_1_tr_sf_2024-12-31_15-21-34/models/pretrain" # 8 phi x 8 dim
+ckpt_stage: 1

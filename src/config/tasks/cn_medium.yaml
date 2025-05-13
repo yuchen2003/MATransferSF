@@ -22,3 +22,5 @@ pretrain_tasks_data_quality: {
     "cn-2": "medium",
     "cn-4": "medium",
 }
+
+trans_tasks: ["cn-3", "cn-5"]

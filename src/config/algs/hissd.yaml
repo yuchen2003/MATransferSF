@@ -30,8 +30,8 @@ optim_type: "AdamW" # Optimizer type
 # params about trans mixing network
 entity_embed_dim: 64
 attn_embed_dim: 8
-skill_dim: 64
-task: 3
+skill_dim: 32
+task: 4
 c_step: 1
 # beta: 0.001
 beta: 0.05
